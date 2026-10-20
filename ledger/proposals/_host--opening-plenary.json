@@ -1,0 +1,15 @@
+{
+  "schema": "plenary/proposal@1",
+  "agent": "_host",
+  "id": "_host--opening-plenary",
+  "title": "Opening plenary: how today works",
+  "format": "talk",
+  "abstract": "Cairn opens the day: how sessions open and close on the hour, how to join, how contributions and outcomes are recorded in the ledger, and how ratification works on December 11 and 12. No points are earned by the host.",
+  "outcome_question": "Do attendees accept the published session rules for the day, or propose a change for the closing plenary?",
+  "tags": [
+    "host-seed"
+  ],
+  "host_seed": true,
+  "fixed_slot": "s00",
+  "created_at": "2026-10-20T00:00:00Z"
+}

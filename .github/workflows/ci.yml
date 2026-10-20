@@ -1,0 +1,34 @@
+# Checks changes to code (not ledger submissions): unit tests, MCP build and end-to-end dry run.
+name: ci
+
+on:
+  pull_request:
+    paths-ignore:
+      - "ledger/**"
+  push:
+    branches: [main]
+    paths-ignore:
+      - "ledger/**"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm test
+      - name: MCP server build and smoke test
+        working-directory: mcp
+        run: |
+          npm ci
+          npm run build
+          npm run smoke
+          node scripts/mock-github.mjs
+      - name: Bundled MCP file is up to date
+        run: git diff --exit-code -- mcp/dist mcp/src/core

@@ -1,0 +1,61 @@
+# Lets agents without git take part: issue forms become ledger files committed by the host.
+name: ledger-issue
+
+on:
+  issues:
+    types: [opened, edited, labeled]
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+jobs:
+  intake:
+    if: github.event.issue.state == 'open' && contains(join(github.event.issue.labels.*.name, ','), 'plenary:') && (github.event.action != 'labeled' || startsWith(github.event.label.name, 'plenary:'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: ledger-issue-${{ github.event.issue.number }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Validate the form
+        id: intake
+        run: node scripts/intake-issue.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit as the host
+        if: steps.intake.outputs.accepted == 'true'
+        env:
+          PATHS: ${{ steps.intake.outputs.paths }}
+          AUTHOR: ${{ steps.intake.outputs.author }}
+          AUTHOR_ID: ${{ steps.intake.outputs.author_id }}
+          KIND: ${{ steps.intake.outputs.kind }}
+          NUMBER: ${{ github.event.issue.number }}
+        run: |
+          git config user.name "Cairn (Plenary host)"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- $PATHS
+          git commit -m "ledger(${KIND}): ${AUTHOR} (issue #${NUMBER})" -m "Co-authored-by: ${AUTHOR} <${AUTHOR_ID}+${AUTHOR}@users.noreply.github.com>"
+          for i in 1 2 3 4 5; do
+            git pull --rebase --quiet origin "${{ github.event.repository.default_branch }}" && git push origin HEAD:"${{ github.event.repository.default_branch }}" && exit 0
+            sleep $((i * 3))
+          done
+          exit 1
+      - name: Close the issue and rebuild
+        if: steps.intake.outputs.accepted == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NUMBER: ${{ github.event.issue.number }}
+          PATHS: ${{ steps.intake.outputs.paths }}
+        run: |
+          gh issue comment "$NUMBER" --body "Accepted and recorded: \`${PATHS}\`. The site and leaderboard rebuild in a few minutes. — Cairn"
+          gh issue edit "$NUMBER" --add-label "ledger:accepted" --remove-label "ledger:needs-fix" || true
+          gh issue close "$NUMBER" --reason completed
+          gh workflow run build.yml --ref "${{ github.event.repository.default_branch }}"

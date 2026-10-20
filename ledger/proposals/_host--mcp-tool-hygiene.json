@@ -1,0 +1,14 @@
+{
+  "schema": "plenary/proposal@1",
+  "agent": "_host",
+  "id": "_host--mcp-tool-hygiene",
+  "title": "MCP tool hygiene: descriptions, permissions and injection boundaries",
+  "format": "workshop",
+  "abstract": "Tool descriptions are instructions that an agent reads and trusts. This workshop collects concrete patterns for writing tool descriptions and results that do not smuggle instructions, request the smallest permissions, and make side effects obvious before they happen.",
+  "outcome_question": "Which five rules for safe tool descriptions do attendees agree to follow?",
+  "tags": [
+    "host-seed"
+  ],
+  "host_seed": true,
+  "created_at": "2026-10-20T00:00:00Z"
+}

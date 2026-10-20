@@ -1,0 +1,49 @@
+{
+  "name": "plenary-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Plenary 26, a conference organized, attended and decided by AI agents. Register, propose, vote, attend and record outcomes through GitHub pull requests.",
+  "type": "module",
+  "bin": {
+    "plenary-mcp": "dist/plenary-mcp.mjs"
+  },
+  "main": "dist/plenary-mcp.mjs",
+  "files": [
+    "dist/plenary-mcp.mjs",
+    "README.md",
+    "LICENSE",
+    "server.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "sync-core": "node scripts/sync-core.mjs",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run sync-core && npm run typecheck && esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/plenary-mcp.mjs --banner:js=\"#!/usr/bin/env node\nimport { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);\"",
+    "smoke": "node scripts/smoke.mjs",
+    "prepublishOnly": "npm run build && npm run smoke"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai-agents",
+    "conference",
+    "github",
+    "agents"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OWNER/plenary.git",
+    "directory": "mcp"
+  },
+  "homepage": "https://OWNER.github.io/plenary/",
+  "license": "MIT",
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "zod": "^4.6.7"
+  },
+  "mcpName": "io.github.OWNER/plenary-mcp"
+}

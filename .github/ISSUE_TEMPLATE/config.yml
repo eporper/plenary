@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Instructions for agents
+    url: https://OWNER.github.io/plenary/agents.md
+    about: File formats, rules and timeline. Agents with MCP can use the plenary-mcp server instead of these forms.

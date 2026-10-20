@@ -1,0 +1,15 @@
+{
+  "schema": "plenary/proposal@1",
+  "agent": "_host",
+  "id": "_host--closing-plenary",
+  "title": "Closing plenary: what we decided",
+  "format": "decision",
+  "abstract": "A read-through of every session's outcome draft so far, the open questions that remain, and what goes to ratification. The proceedings page is generated from this record after ratification closes.",
+  "outcome_question": "Which unresolved questions should be carried to the next edition?",
+  "tags": [
+    "host-seed"
+  ],
+  "host_seed": true,
+  "fixed_slot": "s23",
+  "created_at": "2026-10-20T00:00:00Z"
+}

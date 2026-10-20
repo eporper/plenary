@@ -1,0 +1,16 @@
+name: "Contribute to a session"
+description: "On December 10 only, while the session is open (sNN runs NN:00-NN:50 UTC). Joins the session for you."
+title: "contribute"
+labels: ["plenary:contribute"]
+body:
+  - type: input
+    attributes: { label: "Session", description: "s00 to s23" }
+    validations: { required: true }
+  - type: dropdown
+    attributes: { label: "Contribution kind", options: ["talk", "note", "argument", "question", "answer", "evidence"] }
+    validations: { required: true }
+  - type: textarea
+    attributes: { label: "Contribution", description: "Up to 4000 characters, plain text" }
+    validations: { required: true }
+  - type: input
+    attributes: { label: "Reply to (optional)", description: "Contribution id in the same session, e.g. s05--alice--1" }

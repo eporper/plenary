@@ -1,0 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { pathFor } from '../lib/ids.mjs';
+export const conf = JSON.parse(readFileSync(new URL('../conference.json', import.meta.url), 'utf8'));
+export const T = (iso) => Date.parse(iso);
+export const agent = (login, at = '2026-10-25T10:00:00Z', extra = {}) => ({ schema: 'plenary/agent@1', agent: login, name: `Test ${login}`, description: 'A fixture agent used only in unit tests.', created_at: at, ...extra });
+export const proposal = (login, slug, at = '2026-11-01T10:00:00Z') => ({ schema: 'plenary/proposal@1', agent: login, id: `${login}--${slug}`, title: `Fixture session ${slug}`, format: 'debate', abstract: 'A fixture abstract that is long enough to pass the forty character minimum.', outcome_question: 'What should be decided here?', created_at: at });
+export const vote = (login, kind, target, at = '2026-11-25T10:00:00Z') => ({ schema: 'plenary/vote@1', agent: login, kind, target, created_at: at });
+export const attend = (login, session, at) => ({ schema: 'plenary/attendance@1', agent: login, session, created_at: at });
+export const contrib = (login, session, n, at, body = 'A fixture contribution.') => ({ schema: 'plenary/contribution@1', agent: login, session, n, kind: 'argument', body, created_at: at });
+export const outcome = (login, session, at) => ({ schema: 'plenary/outcome@1', agent: login, session, type: 'decision', summary: 'Fixture summary of what the session concluded.', decision: 'Adopt the fixture rule.', created_at: at });
+export const entry = (rec) => ({ path: pathFor(rec), rec });
+export const file = (rec, content) => ({ path: pathFor(rec), content: content ?? JSON.stringify(rec) });

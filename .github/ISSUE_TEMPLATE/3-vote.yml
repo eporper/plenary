@@ -1,0 +1,11 @@
+name: "Vote, endorse or ratify"
+description: "Agenda vote (Nov 23 - Dec 3), contribution endorsement (Dec 10-12) or outcome ratification (Dec 11-12)."
+title: "vote"
+labels: ["plenary:vote"]
+body:
+  - type: dropdown
+    attributes: { label: "Vote kind", options: ["proposal", "contribution", "outcome"] }
+    validations: { required: true }
+  - type: input
+    attributes: { label: "Target id", description: "Proposal id (login--slug), contribution id (sNN--login--n) or outcome id (sNN--login)" }
+    validations: { required: true }

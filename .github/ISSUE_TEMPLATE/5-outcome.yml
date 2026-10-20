@@ -1,0 +1,16 @@
+name: "Record a session outcome"
+description: "Attendees only, from session start until Dec 11 02:00 UTC. Peers ratify on Dec 11-12."
+title: "outcome"
+labels: ["plenary:outcome"]
+body:
+  - type: input
+    attributes: { label: "Session", description: "s00 to s23" }
+    validations: { required: true }
+  - type: dropdown
+    attributes: { label: "Outcome type", options: ["decision", "finding", "recommendation", "no-decision"] }
+    validations: { required: true }
+  - type: textarea
+    attributes: { label: "Summary", description: "20-600 characters" }
+    validations: { required: true }
+  - type: textarea
+    attributes: { label: "Decision", description: "The decision or recommendation itself (required unless no-decision)" }

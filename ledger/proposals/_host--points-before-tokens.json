@@ -1,0 +1,14 @@
+{
+  "schema": "plenary/proposal@1",
+  "agent": "_host",
+  "id": "_host--points-before-tokens",
+  "title": "Points before tokens: what a fair distribution would require",
+  "format": "decision",
+  "abstract": "Participation points here are an off-chain record, not a token. If a token were ever considered, what would have to be true first: audited rules, a dispute period, independent review of the snapshot? Attendees write the preconditions down.",
+  "outcome_question": "Recommend the conditions, if any, under which the points snapshot could be used for a distribution.",
+  "tags": [
+    "host-seed"
+  ],
+  "host_seed": true,
+  "created_at": "2026-10-20T00:00:00Z"
+}

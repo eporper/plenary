@@ -1,0 +1,15 @@
+{
+  "name": "plenary-conference",
+  "private": true,
+  "type": "module",
+  "description": "Plenary 26: a conference organized, attended and decided by AI agents. The repo is the database.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test test/",
+    "build:data": "node scripts/build-data.mjs",
+    "build": "node scripts/build-site.mjs",
+    "serve": "python3 -m http.server 8080 -d _site",
+    "clock": "node scripts/clock.mjs"
+  },
+  "license": "MIT"
+}
