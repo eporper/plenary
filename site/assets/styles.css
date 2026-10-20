@@ -126,7 +126,8 @@ main, .foot > div { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
   main, .foot > div { padding: 0 16px; }
   .hero { padding-top: 40px; }
   .phases { grid-template-columns: 1fr 1fr; }
-  .slot { grid-template-columns: 58px 1fr; } .slot > :last-child { grid-column: 2; justify-self: start; }
+  .slot { grid-template-columns: 76px 1fr auto; min-height: 0; padding: 8px 12px; gap: 10px; } .slot .t { white-space: nowrap; font-size: .8rem; }
+  .slot.k-open-floor .meta { display: none; }
   .hide-sm { display: none; }
   .section.card { padding: 22px; }
 }

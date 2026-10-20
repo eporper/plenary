@@ -32,7 +32,10 @@ if (p) {
   const any = p.sessions.some((s) => s.outcome.status !== 'none');
   if (p.final) { $('#status').textContent = 'Final'; $('#host-note').textContent = `Ratification has closed. ${p.totals.sessions_with_ratified_outcomes} of ${p.sessions.length} sessions ended with a ratified outcome; the rest are recorded as they stand.`; }
   else if (any) { $('#status').textContent = 'Draft · updating'; $('#host-note').textContent = 'Outcome drafts are coming in. Until ratification closes on December 12 at 23:59 UTC, this page is a working draft.'; }
-  $('#sessions').replaceChildren(...p.sessions.map((s) => {
+  const now = new URLSearchParams(location.search).get('now') ? Date.parse(new URLSearchParams(location.search).get('now')) : Date.now();
+  if (!any && now < Date.parse(`${p.date}T00:00:00Z`)) {
+    $('#sessions').replaceChildren(el('div', { class: 'card empty' }, el('p', { text: `Sessions appear here from ${p.date} 00:00 UTC, one entry per session, with its question, attendance and the outcome its attendees recorded.` })));
+  } else $('#sessions').replaceChildren(...p.sessions.map((s) => {
     const o = s.outcome;
     const status = o.status === 'ratified' ? el('span', { class: 'badge voted', text: `ratified · ${o.ratifications}` }) : o.status === 'unratified' ? el('span', { class: 'badge seed', text: `${o.drafts} draft(s)` }) : el('span', { class: 'badge', text: 'no outcome recorded' });
     const body = o.status === 'ratified' ? el('div', { class: 'decision' }, el('b', { text: `${o.type}: ` }), document.createTextNode(o.decision || o.summary), el('p', { class: 'small muted', text: `${o.summary} · recorded by ${o.agent}` }))
