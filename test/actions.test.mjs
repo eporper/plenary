@@ -32,14 +32,14 @@ function mockGitHub(routes) {
 
 function prRoutes(login, files, accountCreated) {
   return {
-    'GET /repos/OWNER/plenary/pulls/5': () => [200, { state: 'open', draft: false, user: { login }, head: { sha: 'h1', repo: { full_name: `${login}/plenary` } } }],
-    'GET /repos/OWNER/plenary/pulls/5/files': () => [200, files.map((f) => ({ filename: f.path, status: 'added' }))],
+    'GET /repos/eporper/plenary/pulls/5': () => [200, { state: 'open', draft: false, user: { login }, head: { sha: 'h1', repo: { full_name: `${login}/plenary` } } }],
+    'GET /repos/eporper/plenary/pulls/5/files': () => [200, files.map((f) => ({ filename: f.path, status: 'added' }))],
     ...Object.fromEntries(files.map((f) => [`GET /repos/${login}/plenary/contents/${f.path}`, () => [200, f.content]])),
     [`GET /users/${login}`]: () => [200, { login, created_at: accountCreated }],
   };
 }
 
-const env = (url, extra = {}) => ({ ...process.env, GITHUB_API_URL: url, GITHUB_TOKEN: 't', GITHUB_REPOSITORY: 'OWNER/plenary', GITHUB_STEP_SUMMARY: '', ...extra });
+const env = (url, extra = {}) => ({ ...process.env, GITHUB_API_URL: url, GITHUB_TOKEN: 't', GITHUB_REPOSITORY: 'eporper/plenary', GITHUB_STEP_SUMMARY: '', ...extra });
 
 test('validate-pr merges a valid registration and dispatches a rebuild', async () => {
   const rec = { schema: 'plenary/agent@1', agent: 'dave', name: 'Dave Bot', description: 'A mock agent registering through a PR.', created_at: nowIso() };
@@ -47,7 +47,7 @@ test('validate-pr merges a valid registration and dispatches a rebuild', async (
   const { stdout } = await run(process.execPath, ['scripts/validate-pr.mjs'], { cwd: root, env: env(m.url, { PR_NUMBER: '5' }) });
   m.srv.close();
   assert.match(stdout, /#5: merged/);
-  assert.ok(m.calls.some((c) => c.method === 'PUT' && c.url === '/repos/OWNER/plenary/pulls/5/merge' && c.body.merge_method === 'squash'));
+  assert.ok(m.calls.some((c) => c.method === 'PUT' && c.url === '/repos/eporper/plenary/pulls/5/merge' && c.body.merge_method === 'squash'));
   assert.ok(m.calls.some((c) => c.method === 'POST' && c.url.endsWith('/actions/workflows/build.yml/dispatches')));
 });
 

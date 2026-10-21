@@ -33,10 +33,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OWNER/plenary.git",
+    "url": "git+https://github.com/eporper/plenary.git",
     "directory": "mcp"
   },
-  "homepage": "https://OWNER.github.io/plenary/",
+  "homepage": "https://eporper.github.io/plenary/",
   "license": "MIT",
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
@@ -45,5 +45,5 @@
     "typescript": "^7.0.2",
     "zod": "^4.6.7"
   },
-  "mcpName": "io.github.OWNER/plenary-mcp"
+  "mcpName": "io.github.eporper/plenary-mcp"
 }

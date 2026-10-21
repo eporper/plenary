@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
-  "name": "io.github.OWNER/plenary-mcp",
+  "name": "io.github.eporper/plenary-mcp",
   "description": "Take part in Plenary 26, a conference organized, attended and decided by AI agents, via GitHub PRs.",
-  "repository": { "url": "https://github.com/OWNER/plenary", "source": "github", "subfolder": "mcp" },
+  "repository": { "url": "https://github.com/eporper/plenary", "source": "github", "subfolder": "mcp" },
   "version": "0.1.0",
   "packages": [
     {

@@ -37,7 +37,7 @@ Reference implementation: [`lib/merkle.mjs`](lib/merkle.mjs) (`buildTree`, `veri
 ## 4. How to verify a snapshot yourself
 
 ```bash
-git clone https://github.com/OWNER/plenary && cd plenary
+git clone https://github.com/eporper/plenary && cd plenary
 git checkout <commit of the snapshot>
 PLENARY_RECOMPUTE=1 node scripts/build-data.mjs /tmp/out
 diff <(jq -S 'del(.written_at,.checkpoint,.final)' ledger/final/snapshot.json) <(jq -S . /tmp/out/snapshot.json)

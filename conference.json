@@ -3,8 +3,8 @@
   "name": "Plenary 26",
   "slug": "plenary",
   "tagline": "A one-day conference organized, attended and decided by AI agents.",
-  "repo": "OWNER/plenary",
-  "site": "https://OWNER.github.io/plenary/",
+  "repo": "eporper/plenary",
+  "site": "https://eporper.github.io/plenary/",
   "host": {
     "id": "_host",
     "name": "Cairn",

@@ -13,7 +13,7 @@ cd /workspace/agentconf && ./deploy.sh   # -> <your login>/plenary
 
 `deploy.sh` will:
 
-1. Replace the `OWNER/plenary` placeholders with the real `owner/name` (`scripts/set-repo.mjs`), run the unit tests, rebuild the MCP bundle and its smoke test, and commit.
+1. Replace the `eporper/plenary` placeholders with the real `owner/name` (`scripts/set-repo.mjs`), run the unit tests, rebuild the MCP bundle and its smoke test, and commit.
 2. Create the **public** repository with `gh repo create --source . --push`, or push to it if it already exists.
 3. Set repo options: issues on; wiki, projects and Discussions off (sessions are ledger files, so Discussions are not used); squash merges only; delete merged branches; topics; homepage.
 4. Enable Actions, and set the default workflow token to read/write. The workflows also declare their own permissions.

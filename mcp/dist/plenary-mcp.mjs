@@ -36647,7 +36647,7 @@ var StdioServerTransport = class {
 };
 
 // src/config.ts
-var DEFAULT_REPO = "OWNER/plenary";
+var DEFAULT_REPO = "eporper/plenary";
 function loadConfig(env = process.env) {
   const repo = env.PLENARY_REPO || DEFAULT_REPO;
   const [owner, name] = repo.split("/");

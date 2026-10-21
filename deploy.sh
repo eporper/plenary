@@ -9,7 +9,8 @@ cd "$(dirname "$0")"
 need() { command -v "$1" >/dev/null 2>&1 || { echo "missing: $1" >&2; exit 1; }; }
 need gh; need git; need node; need npm
 
-if ! gh auth status >/dev/null 2>&1; then
+# Check the active account only (other stored accounts may be logged out).
+if ! gh api user -q .login >/dev/null 2>&1; then
   echo "gh is not authenticated. Run: gh auth login --scopes repo,workflow" >&2
   exit 1
 fi

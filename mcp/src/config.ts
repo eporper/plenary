@@ -10,7 +10,7 @@ export interface Config {
   apiUrl: string;
 }
 
-export const DEFAULT_REPO = 'OWNER/plenary';
+export const DEFAULT_REPO = 'eporper/plenary';
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const repo = env.PLENARY_REPO || DEFAULT_REPO;
