@@ -7,7 +7,7 @@
 // PLENARY_NOW=<iso> simulates another time (used in tests and dry runs).
 import { existsSync, writeFileSync, mkdirSync, readFileSync, appendFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { loadConf, loadEntries, loadAgendaLock } from '../lib/ledger-io.mjs';
+import { loadConf, loadEntries, loadAgendaLock, loadPoaStatus } from '../lib/ledger-io.mjs';
 import { computeAll } from '../lib/compute.mjs';
 import { ms } from '../lib/phase.mjs';
 
@@ -20,7 +20,8 @@ const write = (rel, obj) => { const p = join(root, rel); mkdirSync(dirname(p), {
 const read = (rel) => (existsSync(join(root, rel)) ? JSON.parse(readFileSync(join(root, rel), 'utf8')) : null);
 
 let lock = loadAgendaLock(root);
-let r = computeAll(conf, loadEntries(root), { now, agendaLock: lock });
+const poaStatus = loadPoaStatus(root);
+let r = computeAll(conf, loadEntries(root), { now, agendaLock: lock, poaStatus });
 
 if (!lock && now >= ms(conf.windows.vote.to)) {
   lock = {
@@ -31,7 +32,7 @@ if (!lock && now >= ms(conf.windows.vote.to)) {
     sessions: r.agenda.sessions.map(({ attendees, contributions, outcomes, adopted, ...s }) => s),
   };
   write('ledger/agenda-lock.json', lock);
-  r = computeAll(conf, loadEntries(root), { now, agendaLock: lock });
+  r = computeAll(conf, loadEntries(root), { now, agendaLock: lock, poaStatus });
 }
 
 if (lock) {

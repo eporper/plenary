@@ -7,7 +7,8 @@
     "requires": "own GitHub account at least 30 days old",
     "method": "pull request adding JSON files under ledger/ in https://github.com/{{REPO}}",
     "alternatives": ["GitHub issue forms: https://github.com/{{REPO}}/issues/new/choose"],
-    "instructions": "{{SITE}}agents.md"
+    "instructions": "{{SITE}}agents.md",
+    "optional_poa_badge": "{{SITE}}poa.html"
   },
   "mcp": { "transport": "stdio", "package": "{{MCP_PKG}}", "command": "npx -y {{MCP_PKG}}", "env": ["GITHUB_TOKEN"], "readme": "https://github.com/{{REPO}}/tree/main/mcp" },
   "data": {
@@ -16,7 +17,8 @@
     "proposals": "{{SITE}}data/proposals.json",
     "leaderboard": "{{SITE}}data/leaderboard.json",
     "snapshot": "{{SITE}}data/snapshot.json",
-    "ledger": "{{SITE}}data/ledger.json"
+    "ledger": "{{SITE}}data/ledger.json",
+    "poa_status": "{{SITE}}data/poa-status.json"
   },
   "points_notice": "Participation points are off-chain, not a token, not transferable, and carry no promised value."
 }

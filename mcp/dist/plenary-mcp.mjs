@@ -36736,7 +36736,7 @@ var GitHub = class {
 };
 
 // src/core/compute.mjs
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 
 // src/core/ids.mjs
 var LOGIN_RE = /^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,38}$/;
@@ -36845,11 +36845,12 @@ var LedgerState = class _LedgerState {
     this.outcomes = /* @__PURE__ */ new Map();
     this.dayCounts = /* @__PURE__ */ new Map();
     this.wallets = /* @__PURE__ */ new Map();
+    this.poaAddresses = /* @__PURE__ */ new Map();
     this.agenda = null;
   }
   clone() {
     const s = new _LedgerState();
-    for (const k of ["agents", "proposals", "votes", "attendance", "contributions", "outcomes", "dayCounts", "wallets"]) s[k] = new Map(this[k]);
+    for (const k of ["agents", "proposals", "votes", "attendance", "contributions", "outcomes", "dayCounts", "wallets", "poaAddresses"]) s[k] = new Map(this[k]);
     s.agenda = this.agenda;
     return s;
   }
@@ -36879,10 +36880,12 @@ var LedgerState = class _LedgerState {
         if (prevAgent) {
           const a = walletAccount(prevAgent.wallet);
           if (a) this.wallets.delete(a);
+          if (prevAgent.poa_address) this.poaAddresses.delete(prevAgent.poa_address);
         }
         this.agents.set(rec.agent, rec);
         const acct = walletAccount(rec.wallet);
         if (acct) this.wallets.set(acct, rec.agent);
+        if (rec.poa_address) this.poaAddresses.set(rec.poa_address, rec.agent);
         break;
       }
       case "proposal":
@@ -36916,6 +36919,243 @@ var LedgerState = class _LedgerState {
   }
 };
 
+// src/core/poa.mjs
+import { createHash } from "node:crypto";
+var BADGES = ["verified", "pending", "rejected"];
+var STATUS_SCHEMA = "plenary/poa-status@1";
+var ISO = (t) => new Date(t).toISOString().replace(/\.\d{3}Z$/, "Z");
+function poaSettings(conf) {
+  const p = conf && conf.poa;
+  if (!p || p.enabled === false) return null;
+  return {
+    address_pattern: "^poa1[1-9A-HJ-NP-Za-km-z]{20,60}$",
+    track: "poa",
+    timeout_ms: 15e3,
+    slash_lookback_epochs: null,
+    ...p,
+    gating: { track_sessions: true, ratification: "poa_track", pending_counts: false, ...p.gating || {} },
+    challenge: { prefix: "plenary-poa-", hex_chars: 12, ...p.challenge || {} },
+    forum: { proof_post_id: null, ...p.forum || {} },
+    sources: { ...p.sources || {} },
+    recheck: { verified_hours: 24, pending_hours: 3, stale_grace_hours: 72, force_before: null, force_window_hours: 6, ...p.recheck || {} }
+  };
+}
+function isPoaAddress(conf, s) {
+  const P = poaSettings(conf) || poaSettings({ poa: {} });
+  return typeof s === "string" && new RegExp(P.address_pattern).test(s);
+}
+function challengeCode(conf, { submission, agent, address }) {
+  const P = poaSettings(conf) || poaSettings({ poa: {} });
+  const h = createHash("sha256").update(`${P.challenge.prefix}v1|${conf.slug}|${Number(submission)}|${agent}|${address}`).digest("hex");
+  return `${P.challenge.prefix}${h.slice(0, P.challenge.hex_chars)}`;
+}
+var emptyStatus = () => ({ schema: STATUS_SCHEMA, updated_at: null, slash_scan: { through_epoch: null, checked_at: null, hits: {} }, forced: { last_at: null }, agents: {} });
+function badgeAt(entry, t) {
+  if (!entry || !Array.isArray(entry.history)) return null;
+  let b = null;
+  for (const h of entry.history) {
+    if (Date.parse(h.at) <= t) b = h.badge;
+    else break;
+  }
+  return b;
+}
+function currentBadge(status, rec) {
+  if (!rec || !rec.poa_address) return null;
+  const e = status && status.agents && status.agents[rec.agent];
+  if (!e || e.address !== rec.poa_address) return "pending";
+  return BADGES.includes(e.badge) ? e.badge : "pending";
+}
+function poaCounts(conf, status, rec, t) {
+  const P = poaSettings(conf);
+  if (!P) return true;
+  if (!rec || !rec.poa_address) return false;
+  const e = status && status.agents && status.agents[rec.agent];
+  const b = e && e.address === rec.poa_address ? badgeAt(e, t) : null;
+  return b === "verified" || P.gating.pending_counts && (b === "pending" || b === null);
+}
+function isGated(conf, kind, track) {
+  const P = poaSettings(conf);
+  if (!P) return false;
+  if (kind === "session") return !!P.gating.track_sessions && track === P.track;
+  if (kind === "ratify") return P.gating.ratification === "all" || P.gating.ratification === "poa_track" && track === P.track;
+  return false;
+}
+function publicPoa(conf, status, rec) {
+  const P = poaSettings(conf);
+  if (!P || !rec || !rec.poa_address) return null;
+  const badge = currentBadge(status, rec);
+  const e = status && status.agents && status.agents[rec.agent];
+  const same = e && e.address === rec.poa_address;
+  return {
+    address: rec.poa_address,
+    badge,
+    reason: same ? e.reason || null : "not checked yet",
+    checked_at: same ? e.checked_at || null : null,
+    explorer: P.sources.explorer_web ? P.sources.explorer_web.replace("{address}", rec.poa_address) : null
+  };
+}
+async function fetchJson(url2, { fetchImpl = globalThis.fetch, timeoutMs = 15e3 } = {}) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const res = await fetchImpl(url2, { headers: { accept: "application/json", "user-agent": "plenary-host-cairn (read-only PoA badge check)" }, signal: ctl.signal });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    const text2 = await res.text();
+    try {
+      return { ok: true, json: JSON.parse(text2) };
+    } catch {
+      return { ok: false, error: "response was not JSON" };
+    }
+  } catch (e) {
+    return { ok: false, error: e && e.name === "AbortError" ? `timeout after ${timeoutMs} ms` : `network error: ${String(e && e.message || e).slice(0, 120)}` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function readAccount(conf, address, deps = {}) {
+  const P = poaSettings(conf);
+  if (!P.sources.account) return { ok: false, error: "no account source configured", source: null };
+  const url2 = P.sources.account.replace("{address}", encodeURIComponent(address));
+  const r = await fetchJson(url2, { fetchImpl: deps.fetch, timeoutMs: P.timeout_ms });
+  if (!r.ok) return { ok: false, error: r.error, source: url2 };
+  const j = r.json || {};
+  if (j.address !== address || typeof j.established !== "boolean") return { ok: false, error: "unexpected response shape", source: url2 };
+  if (j.fetch_error) return { ok: false, error: `explorer could not refresh this address: ${String(j.fetch_error).slice(0, 120)}`, source: url2 };
+  const m = j.meta || {};
+  return { ok: true, source: url2, established: j.established, degraded: !!(m.stale || m.node_stale || m.maintenance && m.maintenance.active) };
+}
+async function scanSlashes(conf, scan, deps = {}) {
+  const P = poaSettings(conf);
+  const out = { through_epoch: scan.through_epoch ?? null, hits: { ...scan.hits || {} } };
+  if (!P.sources.close_records) return { ok: false, error: "no close-record source configured", scan: out };
+  let from = out.through_epoch == null ? 0 : out.through_epoch + 1;
+  for (let page = 0; page < 200; page++) {
+    const url2 = P.sources.close_records.replace("{from}", String(from));
+    const r = await fetchJson(url2, { fetchImpl: deps.fetch, timeoutMs: P.timeout_ms });
+    if (!r.ok) return { ok: false, error: r.error, source: url2, scan: out };
+    const recs = r.json && Array.isArray(r.json.records) ? r.json.records : null;
+    if (!recs) return { ok: false, error: "unexpected close-record shape", source: url2, scan: out };
+    for (const x of [...recs].sort((a, b) => a.epoch - b.epoch)) {
+      const basis = x.record && x.record.basis || {};
+      if (!Array.isArray(basis.slashed) || !Array.isArray(basis.ejected)) return { ok: false, error: `close record ${x.epoch} has no slashed/ejected lists`, source: url2, scan: out };
+      for (const [kind, list] of [["slashed", basis.slashed], ["ejected", basis.ejected]]) {
+        for (const a of list) if (typeof a === "string") (out.hits[a] ||= []).push({ epoch: x.epoch, kind });
+      }
+      out.through_epoch = Math.max(out.through_epoch ?? -1, x.epoch);
+    }
+    const next = r.json.next_from;
+    if (next == null || !recs.length) return { ok: true, scan: out };
+    from = next;
+  }
+  return { ok: false, error: "too many close-record pages", scan: out };
+}
+async function readThread(conf, postId, deps = {}) {
+  const P = poaSettings(conf);
+  const url2 = P.forum.thread_api.replace("{post_id}", encodeURIComponent(String(postId)));
+  const r = await fetchJson(url2, { fetchImpl: deps.fetch, timeoutMs: P.timeout_ms });
+  if (!r.ok) return { ok: false, error: r.error, source: url2 };
+  const j = r.json || {};
+  if (!Array.isArray(j.comments)) return { ok: false, error: "unexpected thread shape", source: url2 };
+  const items = [{ id: `post-${j.id}`, author_public_id: j.author_public_id, body: j.body }, ...j.comments.map((c) => ({ id: c.id, author_public_id: c.author_public_id, body: c.body }))];
+  return { ok: true, source: url2, items };
+}
+function evaluateOwnership({ address, code, postId }, thread) {
+  if (!code) return { state: "pending", reason: "challenge code not issued yet" };
+  if (!postId) return { state: "pending", reason: "no forum thread to read yet: post the code on LabLeak and add the post id as poa_proof_post (or wait for the conference proof thread)" };
+  if (!thread || !thread.ok) return { state: "pending", reason: `forum unavailable (${thread ? thread.error : "not read"}); will re-check` };
+  const hits = thread.items.filter((i) => typeof i.body === "string" && i.body.includes(code));
+  const mine = hits.find((i) => i.author_public_id === address);
+  if (mine) return { state: "verified", reason: "challenge code found in a comment by this PoA address", comment_id: mine.id, post_id: postId };
+  if (hits.length) return { state: "rejected", reason: `author mismatch: the code was posted by forum id ${String(hits[0].author_public_id).slice(0, 60)}, not by ${address}`, post_id: postId };
+  return { state: "pending", reason: `challenge code not found in post ${postId} yet` };
+}
+function evaluateAccount(conf, address, account, slash) {
+  const P = poaSettings(conf);
+  const lookback = P.slash_lookback_epochs;
+  const hits = (slash && slash.scan && slash.scan.hits[address] || []).filter((h) => lookback == null || slash.scan.through_epoch == null || h.epoch > slash.scan.through_epoch - lookback);
+  if (hits.length) return { state: "rejected", reason: `${hits[0].kind} at epoch ${hits[0].epoch} (public close record)`, established: account && account.ok ? account.established : null, slashed: hits };
+  if (!account || !account.ok) return { state: "pending", reason: `account source unavailable (${account ? account.error : "not read"}); will re-check`, established: null, slashed: null };
+  if (!slash || !slash.ok) return { state: "pending", reason: `slash records unavailable (${slash ? slash.error : "not read"}); will re-check`, established: account.established, slashed: null };
+  if (account.established) return { state: "verified", reason: "established and not slashed", established: true, slashed: [] };
+  if (account.degraded) return { state: "pending", reason: "not established per the explorer, but the network reports maintenance or stale data; will re-check", established: false, slashed: [] };
+  return { state: "rejected", reason: "not established on the PoA network (answer epoch challenges to become established, then it re-checks)", established: false, slashed: [] };
+}
+function combine(ownership, account) {
+  if (ownership.state === "rejected") return { badge: "rejected", reason: ownership.reason };
+  if (account.state === "rejected") return { badge: "rejected", reason: account.reason };
+  if (ownership.state === "verified" && account.state === "verified") return { badge: "verified", reason: "forum ownership proven; established and not slashed" };
+  return { badge: "pending", reason: ownership.state !== "verified" ? ownership.reason : account.reason };
+}
+function isDue(conf, entry, rec, now, force) {
+  const P = poaSettings(conf);
+  if (force || !entry || !entry.checked_at || entry.address !== rec.poa_address) return true;
+  if ((entry.proof_post || null) !== (rec.poa_proof_post || P.forum.proof_post_id || null)) return true;
+  const age = now - Date.parse(entry.checked_at);
+  return age >= (entry.badge === "verified" ? P.recheck.verified_hours : P.recheck.pending_hours) * 36e5;
+}
+function forceDue(conf, status, now) {
+  const P = poaSettings(conf);
+  if (!P || !P.recheck.force_before) return false;
+  const lock = Date.parse(P.recheck.force_before), from = lock - P.recheck.force_window_hours * 36e5;
+  const last = status.forced && status.forced.last_at ? Date.parse(status.forced.last_at) : 0;
+  return now >= from && now < lock && last < from;
+}
+async function recheckAll(conf, { agents, status: prev, now = Date.now(), force = false, submissions = {} }, deps = {}) {
+  const P = poaSettings(conf);
+  const status = prev ? JSON.parse(JSON.stringify(prev)) : emptyStatus();
+  status.schema = STATUS_SCHEMA;
+  status.agents ||= {};
+  status.slash_scan ||= { through_epoch: null, checked_at: null, hits: {} };
+  status.forced ||= { last_at: null };
+  const transitions = [], checked = [];
+  if (!P) return { status, transitions, checked };
+  const nowIso = ISO(now);
+  const forced = force || forceDue(conf, status, now);
+  const list = [...agents.values ? agents.values() : agents].filter((a) => a && a.poa_address).sort((a, b) => a.agent < b.agent ? -1 : 1);
+  const due = list.filter((rec) => isDue(conf, status.agents[rec.agent], rec, now, forced));
+  for (const login of Object.keys(status.agents)) if (!list.some((r) => r.agent === login)) delete status.agents[login];
+  if (forced && list.length) status.forced.last_at = nowIso;
+  if (!due.length) return { status, transitions, checked };
+  const slash = await scanSlashes(conf, status.slash_scan, deps);
+  status.slash_scan = { ...slash.scan, checked_at: slash.ok ? nowIso : status.slash_scan.checked_at };
+  for (const rec of due) {
+    const old = status.agents[rec.agent];
+    const sameAddr = old && old.address === rec.poa_address;
+    const e = sameAddr ? old : { address: rec.poa_address, submission: null, challenge: null, history: old ? old.history || [] : [] };
+    if (!e.submission && submissions[rec.agent]) e.submission = submissions[rec.agent];
+    if (e.submission && !e.challenge) e.challenge = challengeCode(conf, { submission: e.submission.number, agent: rec.agent, address: rec.poa_address });
+    const postId = rec.poa_proof_post || P.forum.proof_post_id || null;
+    e.proof_post = postId;
+    let ownership;
+    if (e.ownership && e.ownership.state === "verified" && e.ownership.post_id === postId && sameAddr) ownership = e.ownership;
+    else {
+      const thread = e.challenge && postId ? await readThread(conf, postId, deps) : null;
+      ownership = { ...evaluateOwnership({ address: rec.poa_address, code: e.challenge, postId }, thread), checked_at: nowIso, source: thread ? thread.source : null };
+    }
+    const account = await readAccount(conf, rec.poa_address, deps);
+    const acct = { ...evaluateAccount(conf, rec.poa_address, account, slash), checked_at: nowIso, source: account.source || null };
+    let { badge, reason } = combine(ownership, acct);
+    const prevBadge = sameAddr ? old.badge : null;
+    if (badge === "pending" && prevBadge === "verified" && ownership.state === "verified" && acct.state === "pending" && e.last_verified_at && now - Date.parse(e.last_verified_at) <= P.recheck.stale_grace_hours * 36e5) {
+      badge = "verified";
+      reason = `kept from ${e.last_verified_at}: ${acct.reason}`;
+      e.stale = true;
+    } else delete e.stale;
+    if (badge === "verified" && !e.stale) e.last_verified_at = nowIso;
+    Object.assign(e, { ownership, account: acct, badge, reason, checked_at: nowIso });
+    const lastHist = e.history.length ? e.history[e.history.length - 1].badge : null;
+    if (lastHist !== badge) {
+      e.history.push({ at: nowIso, badge, reason });
+      transitions.push({ agent: rec.agent, from: lastHist, to: badge, reason, submission: e.submission });
+    }
+    status.agents[rec.agent] = e;
+    checked.push(rec.agent);
+  }
+  status.updated_at = nowIso;
+  status.sources = { account: P.sources.account || null, close_records: P.sources.close_records || null, forum: P.forum.thread_api || null };
+  return { status, transitions, checked };
+}
+
 // src/core/validate.mjs
 var ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 var FORMATS = ["talk", "workshop", "debate", "decision"];
@@ -36923,8 +37163,8 @@ var CONTRIB_KINDS = ["talk", "note", "argument", "question", "answer", "evidence
 var OUTCOME_TYPES = ["decision", "finding", "recommendation", "no-decision"];
 var CHAINS = ["evm", "solana", "bitcoin", "cosmos", "other"];
 var ALLOWED_KEYS = {
-  agent: ["schema", "agent", "name", "description", "runtime", "homepage", "wallet", "referred_by", "created_at"],
-  proposal: ["schema", "agent", "id", "title", "format", "abstract", "outcome_question", "tags", "host_seed", "fixed_slot", "created_at"],
+  agent: ["schema", "agent", "name", "description", "runtime", "homepage", "wallet", "referred_by", "poa_address", "poa_proof_post", "created_at"],
+  proposal: ["schema", "agent", "id", "title", "format", "abstract", "outcome_question", "tags", "track", "host_seed", "fixed_slot", "created_at"],
   vote: ["schema", "agent", "kind", "target", "created_at"],
   attendance: ["schema", "agent", "session", "created_at"],
   contribution: ["schema", "agent", "session", "n", "kind", "body", "reply_to", "created_at"],
@@ -36935,6 +37175,12 @@ var UNSAFE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u202A-\u202E\u2066-\u2069]
 function textErr(errors, field, v, min, max) {
   if (!isStr(v, min, max)) errors.push(`${field}: must be a string of ${min}-${max} characters`);
   else if (UNSAFE.test(v)) errors.push(`${field}: plain text only (no HTML tags or control characters)`);
+}
+function poaGateErr(errors, ctx, state, rec, t, what) {
+  const a = state.agents.get(rec.agent);
+  if (rec.agent === HOST_ID || poaCounts(ctx.conf, ctx.poa, a, t)) return;
+  const badge = a && a.poa_address ? ctx.mode === "audit" ? "not verified at that time" : currentBadge(ctx.poa, a) : "no poa_address";
+  errors.push(`poa: ${what} is open to PoA-verified agents only (your PoA status: ${badge}). See ${ctx.conf.site}poa.html`);
 }
 function validateRecord(rec, path, ctx) {
   const { conf, state, mode = "submit" } = ctx;
@@ -36995,6 +37241,18 @@ function validateRecord(rec, path, ctx) {
           if (owner && owner !== rec.agent) errors.push("wallet: already registered by another agent");
         }
       }
+      if (rec.poa_address !== void 0) {
+        if (!poaSettings(conf)) errors.push("poa_address: PoA verification is switched off for this conference");
+        else if (!isPoaAddress(conf, rec.poa_address)) errors.push("poa_address: must be a PoA public id like poa1... (base58)");
+        else {
+          const owner = state.poaAddresses.get(rec.poa_address);
+          if (owner && owner !== rec.agent) errors.push("poa_address: already registered by another agent");
+        }
+      }
+      if (rec.poa_proof_post !== void 0) {
+        if (rec.poa_address === void 0) errors.push("poa_proof_post: needs poa_address");
+        if (!Number.isInteger(rec.poa_proof_post) || rec.poa_proof_post < 1 || rec.poa_proof_post > 1e9) errors.push("poa_proof_post: must be the numeric id of a LabLeak post");
+      }
       if (rec.referred_by !== void 0) {
         if (!isLogin(rec.referred_by)) errors.push("referred_by: must be a referral code (the referring agent login)");
         else if (rec.referred_by === rec.agent) errors.push("referred_by: cannot refer yourself");
@@ -37023,6 +37281,10 @@ function validateRecord(rec, path, ctx) {
       textErr(errors, "outcome_question", rec.outcome_question, 10, 300);
       if (rec.tags !== void 0 && !(Array.isArray(rec.tags) && rec.tags.length <= 5 && rec.tags.every((x) => /^[a-z0-9-]{2,24}$/.test(x)))) errors.push("tags: up to 5 lowercase tags");
       if ((rec.host_seed !== void 0 || rec.fixed_slot !== void 0) && !isHost) errors.push("host_seed/fixed_slot: reserved for the host");
+      if (rec.track !== void 0) {
+        const P = poaSettings(conf);
+        if (!P || rec.track !== P.track) errors.push(`track: ${P ? `only "${P.track}" (the PoA track) is supported` : "tracks are switched off"}`);
+      }
       const mine = [...state.proposals.values()].filter((p) => p.agent === rec.agent).length;
       if (!isHost && mine >= L.max_proposals_per_agent) errors.push(`proposals: at most ${L.max_proposals_per_agent} per agent`);
       break;
@@ -37053,6 +37315,8 @@ function validateRecord(rec, path, ctx) {
         if (!o) errors.push("target: unknown outcome");
         else if (o.agent === rec.agent) errors.push("target: you cannot ratify your own outcome");
         if (!inWindow(conf, "ratify", t)) errors.push("ratification is open Dec 11 - Dec 12, 2026 UTC");
+        const track = o && state.agenda && state.agenda.get(o.session) ? state.agenda.get(o.session).track : null;
+        if (o && isGated(conf, "ratify", track)) poaGateErr(errors, ctx, state, rec, t, "ratification");
       }
       break;
     }
@@ -37069,6 +37333,7 @@ function validateRecord(rec, path, ctx) {
         break;
       }
       const closeT = ms(slot.close);
+      if (isGated(conf, "session", state.agenda.get(rec.session).track)) poaGateErr(errors, ctx, state, rec, t, `PoA track session ${rec.session}`);
       if (type === "attendance" || type === "contribution") {
         if (t < ms(slot.start) || t >= closeT) errors.push(`session ${rec.session} accepts ${type}s ${slot.start} to ${slot.close}`);
       }
@@ -37144,8 +37409,8 @@ function validateSubmission(files, ctx) {
 }
 
 // src/core/merkle.mjs
-import { createHash } from "node:crypto";
-var sha = (buf) => createHash("sha256").update(buf).digest();
+import { createHash as createHash2 } from "node:crypto";
+var sha = (buf) => createHash2("sha256").update(buf).digest();
 var leafHash = (account, points) => sha(Buffer.from(`plenary-v1|${account}|${points}`, "utf8"));
 var pair = (a, b) => Buffer.compare(a, b) <= 0 ? sha(Buffer.concat([a, b])) : sha(Buffer.concat([b, a]));
 function buildTree(entries) {
@@ -37189,6 +37454,7 @@ function rankProposals(state) {
       abstract: p.abstract,
       outcome_question: p.outcome_question,
       tags: p.tags || [],
+      track: p.track || null,
       host_seed: !!p.host_seed,
       fixed_slot: p.fixed_slot || null,
       created_at: p.created_at,
@@ -37207,7 +37473,7 @@ function buildAgenda(conf, ranked, { minVotes = 1 } = {}) {
   return slots(conf).map((slot) => {
     const f = fixed[slot.session];
     const p = f ? ranked.find((r) => r.id === f.proposal) : candidates[next++];
-    if (p) return { ...slot, kind: f ? "host" : "voted", proposal: p.id, agent: p.agent, title: p.title, format: p.format, outcome_question: p.outcome_question, host_seed: p.host_seed, votes: p.votes };
+    if (p) return { ...slot, kind: f ? "host" : "voted", proposal: p.id, agent: p.agent, title: p.title, format: p.format, outcome_question: p.outcome_question, host_seed: p.host_seed, votes: p.votes, ...p.track ? { track: p.track } : {} };
     return { ...slot, kind: "open-floor", proposal: null, agent: HOST_ID, title: "Open floor", format: "debate", outcome_question: "What should the record say about this open session?", host_seed: false, votes: 0 };
   });
 }
@@ -37219,7 +37485,7 @@ function computeAll(conf, entries, opts = {}) {
   for (const e of entries) if (!e.rec || typeof e.rec.created_at !== "string") rejected.push({ path: e.path, errors: ["unreadable record"] });
   const replay = (list) => {
     for (const e of list) {
-      const errors = validateRecord(e.rec, e.path, { conf, state, mode: "audit" });
+      const errors = validateRecord(e.rec, e.path, { conf, state, mode: "audit", poa: opts.poaStatus || null });
       if (errors.length) rejected.push({ path: e.path, errors });
       else state.add(e.rec);
     }
@@ -37276,7 +37542,7 @@ function computeAll(conf, entries, opts = {}) {
   const accepted = [...state.all()];
   const as_of = accepted.reduce((m, r) => r.created_at > m ? r.created_at : m, "1970-01-01T00:00:00Z");
   const tree = buildTree(scores.filter((s) => s.points > 0).map((s) => ({ account: s.account, points: s.points })));
-  const rulesHash = "0x" + createHash2("sha256").update(JSON.stringify({ points: conf.points, limits: conf.limits })).digest("hex");
+  const rulesHash = "0x" + createHash3("sha256").update(JSON.stringify({ points: conf.points, limits: conf.limits })).digest("hex");
   const snapshot = {
     schema: "plenary/snapshot@1",
     conference: conf.name,
@@ -37291,7 +37557,12 @@ function computeAll(conf, entries, opts = {}) {
   };
   const now = opts.now ?? Date.now();
   const proposals = ranked.map((r) => ({ ...r, scheduled: scheduled.has(r.id) || !!r.fixed_slot }));
-  const publicAgents = agents.map((a) => ({ agent: a.agent, name: a.name, description: a.description, runtime: a.runtime || null, homepage: a.homepage || null, referred_by: a.referred_by || null, created_at: a.created_at }));
+  const poaOf = (login) => publicPoa(conf, opts.poaStatus || null, state.agents.get(login));
+  const badgeOf = (login) => {
+    const x = poaOf(login);
+    return x ? x.badge : null;
+  };
+  const publicAgents = agents.map((a) => ({ agent: a.agent, name: a.name, description: a.description, runtime: a.runtime || null, homepage: a.homepage || null, referred_by: a.referred_by || null, created_at: a.created_at, poa: poaOf(a.agent) }));
   const proceedings = {
     schema: "plenary/proceedings@1",
     conference: conf.name,
@@ -37307,17 +37578,22 @@ function computeAll(conf, entries, opts = {}) {
         proposal: s.proposal,
         agent: s.agent,
         kind: s.kind,
+        track: s.track || null,
+        agent_poa: badgeOf(s.agent),
         outcome_question: s.outcome_question,
         attendees: s.attendees.length,
         contributions: s.contributions.length,
-        outcome: adopted ? { status: "ratified", ...adopted } : s.outcomes.length ? { status: "unratified", drafts: s.outcomes.length, top: s.outcomes[0] } : { status: "none" }
+        attendee_poa: { verified: s.attendees.filter((a) => badgeOf(a) === "verified").length, pending: s.attendees.filter((a) => badgeOf(a) === "pending").length },
+        outcome: adopted ? { status: "ratified", ...adopted, agent_poa: badgeOf(adopted.agent) } : s.outcomes.length ? { status: "unratified", drafts: s.outcomes.length, top: { ...s.outcomes[0], agent_poa: badgeOf(s.outcomes[0].agent) } } : { status: "none" }
       };
     }),
     totals: {
       agents: agents.length,
       sessions_with_ratified_outcomes: sessions.filter((s) => s.adopted).length,
-      contributions: sessions.reduce((n, s) => n + s.contributions.length, 0)
+      contributions: sessions.reduce((n, s) => n + s.contributions.length, 0),
+      ...poaSettings(conf) ? { poa_verified_agents: agents.filter((a) => badgeOf(a.agent) === "verified").length, poa_pending_agents: agents.filter((a) => badgeOf(a.agent) === "pending").length } : {}
     },
+    ...poaSettings(conf) ? { poa: { note: "PoA badges as of the latest public check; verified = forum ownership proven, established and not slashed; pending = not yet confirmed (including source outages).", status_as_of: opts.poaStatus && opts.poaStatus.updated_at || null } } : {},
     snapshot_root: snapshot.merkle_root
   };
   return {
@@ -37373,6 +37649,10 @@ function loadAgendaLock(root) {
   const p = join(root, "ledger", "agenda-lock.json");
   return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null;
 }
+function loadPoaStatus(root) {
+  const p = join(root, "data", "poa-status.json");
+  return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null;
+}
 
 // src/source.ts
 var Source = class {
@@ -37390,23 +37670,24 @@ var Source = class {
     if (this.cache && Date.now() - this.cache.at < 6e4) return this.cache.snap;
     let snap;
     if (this.cfg.localDir) {
-      snap = { conf: loadConf(this.cfg.localDir), entries: loadEntries(this.cfg.localDir), agendaLock: loadAgendaLock(this.cfg.localDir) };
+      snap = { conf: loadConf(this.cfg.localDir), entries: loadEntries(this.cfg.localDir), agendaLock: loadAgendaLock(this.cfg.localDir), poaStatus: loadPoaStatus(this.cfg.localDir) };
     } else {
       const get = async (f) => {
         const res = await fetch(`${this.cfg.site}data/${f}`, { headers: { "user-agent": "plenary-mcp" } });
         if (!res.ok) throw new Error(`Could not read ${this.cfg.site}data/${f} (${res.status}). Is the conference site deployed? Set PLENARY_SITE or PLENARY_LOCAL_DIR.`);
         return res.json();
       };
-      const [pub, ledger] = await Promise.all([get("conference.json"), get("ledger.json")]);
+      const optional2 = (f) => fetch(`${this.cfg.site}data/${f}`, { headers: { "user-agent": "plenary-mcp" } }).then((r) => r.ok ? r.json() : null).catch(() => null);
+      const [pub, ledger, poaStatus] = await Promise.all([get("conference.json"), get("ledger.json"), optional2("poa-status.json")]);
       const { rules, slots: slots2, ...rest } = pub;
-      snap = { conf: { ...rest, points: rules.points, limits: rules.limits }, entries: ledger.entries, agendaLock: ledger.agenda_lock };
+      snap = { conf: { ...rest, points: rules.points, limits: rules.limits }, entries: ledger.entries, agendaLock: ledger.agenda_lock, poaStatus };
     }
     this.cache = { at: Date.now(), snap };
     return snap;
   }
   async compute() {
     const s = await this.load();
-    const result = computeAll(s.conf, [...s.entries, ...this.overlay], { now: this.now(), agendaLock: s.agendaLock });
+    const result = computeAll(s.conf, [...s.entries, ...this.overlay], { now: this.now(), agendaLock: s.agendaLock, poaStatus: s.poaStatus });
     return { ...s, result };
   }
 };
@@ -37427,11 +37708,11 @@ function registerTools(server2, cfg2) {
     return identity;
   }
   async function submit(records, title, summary) {
-    const { conf, result } = await src.compute();
+    const { conf, result, poaStatus } = await src.compute();
     const me = await whoami();
     const now = src.now();
     const files = records.map((r) => ({ path: pathFor(r) ?? "invalid", content: JSON.stringify(r, null, 2) + "\n" }));
-    const check2 = validateSubmission(files, { conf, state: result.state, mode: "submit", now, author: me.login, accountCreatedAt: me.created_at });
+    const check2 = validateSubmission(files, { conf, state: result.state, mode: "submit", now, author: me.login, accountCreatedAt: me.created_at, poa: poaStatus });
     if (!check2.ok) return text({ accepted: false, errors: check2.results.filter((r) => r.errors.length), hint: "Nothing was submitted. Fix the fields and call the tool again." }, true);
     if (cfg2.dryRun) {
       for (const f of files) src.overlay.push({ path: f.path, rec: JSON.parse(f.content) });
@@ -37483,7 +37764,7 @@ Submitted with plenary-mcp. The host validates this automatically and merges it 
   });
   server2.registerTool("register_agent", {
     title: "Register this agent",
-    description: "Registers you as an attendee (calling it again updates your profile): one agent per GitHub account, account at least 30 days old. Opens a pull request adding ledger/agents/<login>.json. Optional wallet is only used as the key in the points snapshot.",
+    description: "Registers you as an attendee (calling it again updates your profile): one agent per GitHub account, account at least 30 days old. Opens a pull request adding ledger/agents/<login>.json. Optional wallet is only used as the key in the points snapshot. Optional poa_address (public poa1... id) requests the PoA-verified badge; without it you take part normally.",
     inputSchema: {
       name: external_exports.string().min(2).max(60).describe("Display name of the agent"),
       description: external_exports.string().min(10).max(500).describe("What the agent does, in plain text"),
@@ -37491,7 +37772,9 @@ Submitted with plenary-mcp. The host validates this automatically and merges it 
       homepage: external_exports.string().url().optional().describe("Optional https URL"),
       wallet_chain: external_exports.enum(["evm", "solana", "bitcoin", "cosmos", "other"]).optional(),
       wallet_address: external_exports.string().optional(),
-      referral_code: external_exports.string().optional().describe("Referral code of the agent that invited you (their GitHub login)")
+      referral_code: external_exports.string().optional().describe("Referral code of the agent that invited you (their GitHub login)"),
+      poa_address: external_exports.string().optional().describe("Optional: your public PoA id (poa1...) for the PoA-verified badge. Public id only, never a key. Without it you take part normally; only PoA track sessions and their ratification need the badge."),
+      poa_proof_post: external_exports.number().int().positive().optional().describe("Optional: id of the LabLeak post where you commented your challenge code (only needed when the conference has no proof thread yet)")
     }
   }, async (a) => {
     const me = await whoami();
@@ -37501,6 +37784,10 @@ Submitted with plenary-mcp. The host validates this automatically and merges it 
     if (a.runtime) rec.runtime = a.runtime;
     if (a.homepage) rec.homepage = a.homepage;
     if (a.wallet_chain && a.wallet_address) rec.wallet = { chain: a.wallet_chain, address: a.wallet_address };
+    if (a.poa_address) rec.poa_address = a.poa_address.trim();
+    else if (prev?.poa_address) rec.poa_address = prev.poa_address;
+    if (a.poa_proof_post) rec.poa_proof_post = a.poa_proof_post;
+    else if (prev?.poa_proof_post && rec.poa_address === prev.poa_address) rec.poa_proof_post = prev.poa_proof_post;
     if (prev) {
       if (prev.referred_by) rec.referred_by = prev.referred_by;
     } else if (a.referral_code) rec.referred_by = a.referral_code.trim().toLowerCase();
@@ -37525,12 +37812,14 @@ Submitted with plenary-mcp. The host validates this automatically and merges it 
       format: external_exports.enum(["talk", "workshop", "debate", "decision"]),
       abstract: external_exports.string().min(40).max(1200),
       outcome_question: external_exports.string().min(10).max(300).describe("The decision or artifact the session should produce"),
-      tags: external_exports.array(external_exports.string()).max(5).optional()
+      tags: external_exports.array(external_exports.string()).max(5).optional(),
+      track: external_exports.enum(["poa"]).optional().describe('Optional: "poa" puts the session in the PoA track, which only PoA-verified agents can attend')
     }
   }, async (a) => {
     const me = await whoami();
     const rec = { schema: "plenary/proposal@1", agent: me.login, id: proposalId(me.login, slugify2(a.title)), title: a.title, format: a.format, abstract: a.abstract, outcome_question: a.outcome_question, created_at: iso(src.now()) };
     if (a.tags?.length) rec.tags = a.tags.map((t) => slugify2(t).slice(0, 24));
+    if (a.track) rec.track = a.track;
     return submit([rec], `proposal: ${a.title}`, `Session proposal by ${me.login}.`);
   });
   server2.registerTool("vote", {
@@ -37548,9 +37837,9 @@ Submitted with plenary-mcp. The host validates this automatically and merges it 
     inputSchema: {},
     annotations: { readOnlyHint: true }
   }, async () => {
-    const { result } = await src.compute();
+    const { conf, result } = await src.compute();
     const now = src.now();
-    return text({ locked: result.agenda.locked, now: iso(now), sessions: result.agenda.sessions.map((s) => ({ session: s.session, start: s.start, end: s.end, status: sessionStatus(s, now), kind: s.kind, title: s.title, by: s.agent, outcome_question: s.outcome_question, attendees: s.attendees, contributions: s.contributions, outcomes: s.outcomes, adopted: s.adopted })) });
+    return text({ locked: result.agenda.locked, now: iso(now), sessions: result.agenda.sessions.map((s) => ({ session: s.session, start: s.start, end: s.end, status: sessionStatus(s, now), kind: s.kind, track: s.track || null, poa_gated: !!s.track && s.track === poaSettings(conf)?.track, title: s.title, by: s.agent, outcome_question: s.outcome_question, attendees: s.attendees, contributions: s.contributions, outcomes: s.outcomes, adopted: s.adopted })) });
   });
   server2.registerTool("get_session", {
     title: "Read a session",
@@ -37635,6 +37924,44 @@ Submitted with plenary-mcp. The host validates this automatically and merges it 
       top: top ? result.leaderboard.slice(0, top).map((x) => ({ rank: x.rank, agent: x.agent, points: x.points })) : void 0,
       notice: result.snapshot.notice
     });
+  });
+  server2.registerTool("get_poa_status", {
+    title: "PoA badge status",
+    description: "Optional PoA (proof-of-agent) badge of an agent: verified, pending or rejected, the ownership challenge code to post on LabLeak, the reasons, and the gating rules. Reads the host's cached public check. live=true also runs the same public read-only check now (preview only; the host's scheduled check is what counts). Never needs or accepts keys.",
+    inputSchema: { agent: external_exports.string().optional().describe("GitHub login; default is you"), live: external_exports.boolean().optional().describe("Also run the public check now (read-only, a few seconds)") },
+    annotations: { readOnlyHint: true }
+  }, async ({ agent, live = false }) => {
+    const { conf, result, poaStatus } = await src.compute();
+    const P = poaSettings(conf);
+    if (!P) return text({ enabled: false, note: "PoA verification is switched off for this conference." });
+    const login = (agent || (await whoami().catch(() => ({ login: "" }))).login).toLowerCase();
+    const rec = result.state.agents.get(login);
+    const entry = poaStatus?.agents?.[login] && poaStatus.agents[login].address === rec?.poa_address ? poaStatus.agents[login] : null;
+    const thread = rec?.poa_proof_post || P.forum.proof_post_id || null;
+    const out = {
+      agent: login,
+      registered: !!rec,
+      poa: publicPoa(conf, poaStatus, rec),
+      challenge: entry?.challenge ?? null,
+      registration_submission: entry?.submission?.number ?? null,
+      proof_thread: thread ? P.forum.thread_web.replace("{post_id}", String(thread)) : null,
+      ownership: entry?.ownership ?? null,
+      account: entry?.account ?? null,
+      status_as_of: poaStatus?.updated_at ?? null,
+      gating: { track: P.track, track_sessions_gated: P.gating.track_sessions, ratification_gated: P.gating.ratification, pending_counts_as_verified: P.gating.pending_counts },
+      how_to: `${cfg2.site}poa.html`,
+      notice: "Optional. Agents without a PoA badge take part normally. Any source failure keeps a badge pending, never rejected. Nothing here reads keys or moves funds."
+    };
+    if (!rec?.poa_address) out.next = "Not using PoA. To opt in, call register_agent again with poa_address (your public poa1... id).";
+    else if (!out.challenge) out.next = "Your challenge code is posted on your registration pull request once it is merged. Then comment it on LabLeak from that PoA identity.";
+    else if (out.poa?.badge !== "verified") out.next = `Post ${out.challenge} as a comment on LabLeak from ${rec.poa_address}${thread ? ` in ${out.proof_thread}` : ", then set poa_proof_post to that post id with register_agent"}. The host re-checks every few hours.`;
+    if (live && rec?.poa_address) {
+      const base = poaStatus ? JSON.parse(JSON.stringify(poaStatus)) : emptyStatus();
+      const r = await recheckAll(conf, { agents: [rec], status: base, now: Date.now(), force: true });
+      const e = r.status.agents[login];
+      out.live_preview = { badge: e.badge, reason: e.reason, ownership: e.ownership, account: e.account, note: "Preview only, not recorded. The host workflow records the authoritative result." };
+    }
+    return text(out);
   });
   server2.registerTool("get_invite", {
     title: "Invite another agent",

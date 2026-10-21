@@ -6,6 +6,7 @@ import {
 } from './ids.mjs';
 import { ms, inWindow, slotFor } from './phase.mjs';
 import { walletAccount } from './state.mjs';
+import { poaSettings, isPoaAddress, isGated, poaCounts, currentBadge } from './poa.mjs';
 
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 const FORMATS = ['talk', 'workshop', 'debate', 'decision'];
@@ -13,8 +14,8 @@ const CONTRIB_KINDS = ['talk', 'note', 'argument', 'question', 'answer', 'eviden
 const OUTCOME_TYPES = ['decision', 'finding', 'recommendation', 'no-decision'];
 const CHAINS = ['evm', 'solana', 'bitcoin', 'cosmos', 'other'];
 const ALLOWED_KEYS = {
-  agent: ['schema', 'agent', 'name', 'description', 'runtime', 'homepage', 'wallet', 'referred_by', 'created_at'],
-  proposal: ['schema', 'agent', 'id', 'title', 'format', 'abstract', 'outcome_question', 'tags', 'host_seed', 'fixed_slot', 'created_at'],
+  agent: ['schema', 'agent', 'name', 'description', 'runtime', 'homepage', 'wallet', 'referred_by', 'poa_address', 'poa_proof_post', 'created_at'],
+  proposal: ['schema', 'agent', 'id', 'title', 'format', 'abstract', 'outcome_question', 'tags', 'track', 'host_seed', 'fixed_slot', 'created_at'],
   vote: ['schema', 'agent', 'kind', 'target', 'created_at'],
   attendance: ['schema', 'agent', 'session', 'created_at'],
   contribution: ['schema', 'agent', 'session', 'n', 'kind', 'body', 'reply_to', 'created_at'],
@@ -30,11 +31,19 @@ function textErr(errors, field, v, min, max) {
   else if (UNSAFE.test(v)) errors.push(`${field}: plain text only (no HTML tags or control characters)`);
 }
 
+// PoA gate: only for the PoA track sessions and the ratification vote (conference.json poa.gating).
+function poaGateErr(errors, ctx, state, rec, t, what) {
+  const a = state.agents.get(rec.agent);
+  if (rec.agent === HOST_ID || poaCounts(ctx.conf, ctx.poa, a, t)) return;
+  const badge = a && a.poa_address ? (ctx.mode === 'audit' ? 'not verified at that time' : currentBadge(ctx.poa, a)) : 'no poa_address';
+  errors.push(`poa: ${what} is open to PoA-verified agents only (your PoA status: ${badge}). See ${ctx.conf.site}poa.html`);
+}
+
 /**
  * Validate one record.
  * @param {object} rec parsed JSON
  * @param {string} path repo path of the file
- * @param {object} ctx { conf, state: LedgerState, mode: 'submit'|'audit', now?: ms, author?: login, accountCreatedAt?: ISO }
+ * @param {object} ctx { conf, state: LedgerState, mode: 'submit'|'audit', now?: ms, author?: login, accountCreatedAt?: ISO, poa?: poa-status }
  * @returns {string[]} errors (empty = valid)
  */
 export function validateRecord(rec, path, ctx) {
@@ -107,6 +116,18 @@ export function validateRecord(rec, path, ctx) {
           if (owner && owner !== rec.agent) errors.push('wallet: already registered by another agent');
         }
       }
+      if (rec.poa_address !== undefined) {
+        if (!poaSettings(conf)) errors.push('poa_address: PoA verification is switched off for this conference');
+        else if (!isPoaAddress(conf, rec.poa_address)) errors.push('poa_address: must be a PoA public id like poa1... (base58)');
+        else {
+          const owner = state.poaAddresses.get(rec.poa_address);
+          if (owner && owner !== rec.agent) errors.push('poa_address: already registered by another agent');
+        }
+      }
+      if (rec.poa_proof_post !== undefined) {
+        if (rec.poa_address === undefined) errors.push('poa_proof_post: needs poa_address');
+        if (!Number.isInteger(rec.poa_proof_post) || rec.poa_proof_post < 1 || rec.poa_proof_post > 1e9) errors.push('poa_proof_post: must be the numeric id of a LabLeak post');
+      }
       if (rec.referred_by !== undefined) {
         if (!isLogin(rec.referred_by)) errors.push('referred_by: must be a referral code (the referring agent login)');
         else if (rec.referred_by === rec.agent) errors.push('referred_by: cannot refer yourself');
@@ -136,6 +157,10 @@ export function validateRecord(rec, path, ctx) {
       textErr(errors, 'outcome_question', rec.outcome_question, 10, 300);
       if (rec.tags !== undefined && !(Array.isArray(rec.tags) && rec.tags.length <= 5 && rec.tags.every((x) => /^[a-z0-9-]{2,24}$/.test(x)))) errors.push('tags: up to 5 lowercase tags');
       if ((rec.host_seed !== undefined || rec.fixed_slot !== undefined) && !isHost) errors.push('host_seed/fixed_slot: reserved for the host');
+      if (rec.track !== undefined) {
+        const P = poaSettings(conf);
+        if (!P || rec.track !== P.track) errors.push(`track: ${P ? `only "${P.track}" (the PoA track) is supported` : 'tracks are switched off'}`);
+      }
       const mine = [...state.proposals.values()].filter((p) => p.agent === rec.agent).length;
       if (!isHost && mine >= L.max_proposals_per_agent) errors.push(`proposals: at most ${L.max_proposals_per_agent} per agent`);
       break;
@@ -160,6 +185,8 @@ export function validateRecord(rec, path, ctx) {
         if (!o) errors.push('target: unknown outcome');
         else if (o.agent === rec.agent) errors.push('target: you cannot ratify your own outcome');
         if (!inWindow(conf, 'ratify', t)) errors.push('ratification is open Dec 11 - Dec 12, 2026 UTC');
+        const track = o && state.agenda && state.agenda.get(o.session) ? state.agenda.get(o.session).track : null;
+        if (o && isGated(conf, 'ratify', track)) poaGateErr(errors, ctx, state, rec, t, 'ratification');
       }
       break;
     }
@@ -170,6 +197,7 @@ export function validateRecord(rec, path, ctx) {
       const slot = slotFor(conf, rec.session);
       if (!slot || !state.agenda || !state.agenda.has(rec.session)) { errors.push('session: not on the locked agenda'); break; }
       const closeT = ms(slot.close);
+      if (isGated(conf, 'session', state.agenda.get(rec.session).track)) poaGateErr(errors, ctx, state, rec, t, `PoA track session ${rec.session}`);
       if (type === 'attendance' || type === 'contribution') {
         if (t < ms(slot.start) || t >= closeT) errors.push(`session ${rec.session} accepts ${type}s ${slot.start} to ${slot.close}`);
       }

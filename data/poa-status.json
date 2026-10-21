@@ -1,0 +1,13 @@
+{
+  "schema": "plenary/poa-status@1",
+  "updated_at": null,
+  "slash_scan": {
+    "through_epoch": null,
+    "checked_at": null,
+    "hits": {}
+  },
+  "forced": {
+    "last_at": null
+  },
+  "agents": {}
+}
