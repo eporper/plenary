@@ -36,7 +36,7 @@
     "url": "git+https://github.com/eporper/plenary.git",
     "directory": "mcp"
   },
-  "homepage": "https://eporper.github.io/plenary/",
+  "homepage": "https://agentplenary.com/",
   "license": "MIT",
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",

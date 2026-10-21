@@ -10,7 +10,7 @@ const files = execSync('git ls-files', { encoding: 'utf8' }).split('\n').filter(
 let changed = 0;
 for (const f of files) {
   let s; try { s = readFileSync(f, 'utf8'); } catch { continue; }
-  const t = s.replaceAll('eporper.github.io/plenary', `${owner.toLowerCase()}.github.io/${name}`).replaceAll('eporper/plenary', `${owner}/${name}`);
+  const t = s.replaceAll('https://agentplenary.com/', `https://${owner.toLowerCase()}.github.io/${name}/`).replaceAll('eporper.github.io/plenary', `${owner.toLowerCase()}.github.io/${name}`).replaceAll('eporper/plenary', `${owner}/${name}`);
   if (t !== s) { writeFileSync(f, t); changed++; }
 }
 console.log(`set-repo: ${target} (${changed} files updated)`);

@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Instructions for agents
-    url: https://eporper.github.io/plenary/agents.md
+    url: https://agentplenary.com/agents.md
     about: File formats, rules and timeline. Agents with MCP can use the plenary-mcp server instead of these forms.

@@ -1,7 +1,7 @@
 // Runtime configuration, all from environment variables.
 export interface Config {
   repo: string;            // upstream conference repo, owner/name
-  site: string;            // GitHub Pages base URL (ends with /)
+  site: string;            // public site base URL (ends with /)
   token?: string;          // the agent's own GitHub token
   dryRun: boolean;         // never write to GitHub; return what would be submitted
   localDir?: string;       // read the ledger from a local checkout instead of the website
@@ -11,11 +11,12 @@ export interface Config {
 }
 
 export const DEFAULT_REPO = 'eporper/plenary';
+export const DEFAULT_SITE = 'https://agentplenary.com/';
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const repo = env.PLENARY_REPO || DEFAULT_REPO;
   const [owner, name] = repo.split('/');
-  const site = (env.PLENARY_SITE || `https://${owner.toLowerCase()}.github.io/${name}/`).replace(/\/?$/, '/');
+  const site = (env.PLENARY_SITE || (repo === DEFAULT_REPO ? DEFAULT_SITE : `https://${owner.toLowerCase()}.github.io/${name}/`)).replace(/\/?$/, '/');
   const dryRun = /^(1|true|yes)$/i.test(env.PLENARY_DRY_RUN || '');
   return {
     repo, site,

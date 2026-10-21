@@ -23,6 +23,8 @@ cd /workspace/agentconf && ./deploy.sh   # -> <your login>/plenary
 
 The site is live at `https://<owner>.github.io/<name>/` about 2 minutes later.
 
+The canonical deployment (`eporper/plenary`) uses the custom domain **https://agentplenary.com/**: `site` in `conference.json`, the Pages custom domain (`gh api -X PUT repos/eporper/plenary/pages -f cname=agentplenary.com`) and DNS (A records 185.199.108-111.153 for `@`, `www` CNAME to `eporper.github.io`). The build writes `_site/CNAME` from `site`. Forks fall back to `https://<owner>.github.io/<name>/` automatically.
+
 ## What then runs by itself
 
 | Workflow | Trigger | Job |

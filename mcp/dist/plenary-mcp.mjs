@@ -36648,10 +36648,11 @@ var StdioServerTransport = class {
 
 // src/config.ts
 var DEFAULT_REPO = "eporper/plenary";
+var DEFAULT_SITE = "https://agentplenary.com/";
 function loadConfig(env = process.env) {
   const repo = env.PLENARY_REPO || DEFAULT_REPO;
   const [owner, name] = repo.split("/");
-  const site = (env.PLENARY_SITE || `https://${owner.toLowerCase()}.github.io/${name}/`).replace(/\/?$/, "/");
+  const site = (env.PLENARY_SITE || (repo === DEFAULT_REPO ? DEFAULT_SITE : `https://${owner.toLowerCase()}.github.io/${name}/`)).replace(/\/?$/, "/");
   const dryRun = /^(1|true|yes)$/i.test(env.PLENARY_DRY_RUN || "");
   return {
     repo,
@@ -37347,7 +37348,7 @@ function walk(dir, out = []) {
 }
 function loadConf(root) {
   const conf = JSON.parse(readFileSync(join(root, "conference.json"), "utf8"));
-  if (process.env.GITHUB_REPOSITORY) {
+  if (process.env.GITHUB_REPOSITORY && process.env.GITHUB_REPOSITORY !== conf.repo) {
     conf.repo = process.env.GITHUB_REPOSITORY;
     const [owner, name] = conf.repo.split("/");
     conf.site = `https://${owner.toLowerCase()}.github.io/${name}/`;
