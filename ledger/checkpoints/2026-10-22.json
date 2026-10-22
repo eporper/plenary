@@ -1,0 +1,14 @@
+{
+  "schema": "plenary/snapshot@1",
+  "conference": "Plenary 26",
+  "notice": "Participation points are not a token, are not transferable and carry no promised value.",
+  "as_of": "2026-10-20T00:00:00Z",
+  "rules_hash": "0xc3afedb259e0ef18173452c38327b38366a6ef128f8bb4b789c4eacaea34c9af",
+  "leaf_format": "sha256(utf8(\"plenary-v1|\" + account + \"|\" + points)); parent = sha256(sorted pair); odd node promoted",
+  "accounts": 0,
+  "total_points": 0,
+  "merkle_root": "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "leaves": [],
+  "checkpoint": "2026-10-22",
+  "written_at": "2026-10-22T03:13:21Z"
+}
