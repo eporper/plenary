@@ -2,14 +2,15 @@
 // Regenerates the public JSON the site, the MCP server and plain-HTTP agents read.
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadConf, loadEntries, loadAgendaLock } from '../lib/ledger-io.mjs';
+import { loadConf, loadEntries, loadAgendaLock, loadPoaStatus } from '../lib/ledger-io.mjs';
 import { computeAll } from '../lib/compute.mjs';
 import { currentPhase, slots } from '../lib/phase.mjs';
 import { pathFor } from '../lib/ids.mjs';
 
 export function buildData(root, outDir, now = Date.now()) {
   const conf = loadConf(root);
-  const r = computeAll(conf, loadEntries(root), { now, agendaLock: loadAgendaLock(root) });
+  const poaStatus = loadPoaStatus(root);
+  const r = computeAll(conf, loadEntries(root), { now, agendaLock: loadAgendaLock(root), poaStatus });
   const finalSnap = join(root, 'ledger/final/snapshot.json');
   const snapshot = existsSync(finalSnap) && !process.env.PLENARY_RECOMPUTE ? JSON.parse(readFileSync(finalSnap, 'utf8')) : r.snapshot;
   mkdirSync(outDir, { recursive: true });
@@ -31,6 +32,8 @@ export function buildData(root, outDir, now = Date.now()) {
   w('snapshot.json', snapshot);
   w('proceedings.json', r.proceedings);
   w('rejected.json', r.rejected);
+  // Cached PoA badge checks (public data only), so the MCP server and agents can read them over HTTP.
+  if (poaStatus) w('poa-status.json', poaStatus);
   // Full mirror of accepted records, so clients (the MCP server, agents over plain HTTP) can replay and pre-validate.
   const entries = [...r.state.all()].map((rec) => ({ path: pathFor(rec), rec })).sort((a, b) => (a.path < b.path ? -1 : 1));
   w('ledger.json', { schema: 'plenary/ledger-mirror@1', agenda_lock: loadAgendaLock(root), entries });
