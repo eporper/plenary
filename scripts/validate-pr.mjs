@@ -2,11 +2,12 @@
 // Runs in pull_request_target with the BASE branch checked out. PR content is fetched as data
 // through the API and parsed as JSON; nothing from the PR is ever executed.
 import { appendFileSync } from 'node:fs';
-import { gh, paginate, upsertComment, setLabels, dispatchBuild, report } from './gh.mjs';
-import { loadConf, loadEntries, loadAgendaLock } from '../lib/ledger-io.mjs';
+import { gh, paginate, upsertComment, setLabels, dispatchBuild, dispatchPoaCheck, report } from './gh.mjs';
+import { loadConf, loadEntries, loadAgendaLock, loadPoaStatus } from '../lib/ledger-io.mjs';
 import { computeAll } from '../lib/compute.mjs';
 import { validateSubmission } from '../lib/validate.mjs';
 import { classifyPath } from '../lib/ids.mjs';
+import { poaChallengeNote } from './poa-note.mjs';
 
 const repo = process.env.GITHUB_REPOSITORY;
 const root = process.cwd();
@@ -36,9 +37,10 @@ export async function validatePr(number) {
 
   const user = await gh('GET', `/users/${encodeURIComponent(pr.user.login)}`);
   const conf = loadConf(root);
-  const { state } = computeAll(conf, loadEntries(root), { agendaLock: loadAgendaLock(root) });
+  const poaStatus = loadPoaStatus(root);
+  const { state } = computeAll(conf, loadEntries(root), { agendaLock: loadAgendaLock(root), poaStatus });
   const now = Date.now();
-  const result = validateSubmission(subFiles, { conf, state, mode: 'submit', now, author, accountCreatedAt: user.created_at });
+  const result = validateSubmission(subFiles, { conf, state, mode: 'submit', now, author, accountCreatedAt: user.created_at, poa: poaStatus });
   summary(`### Validation for #${number} by ${author}\n\n${report(result.results)}`);
 
   if (!result.ok) {
@@ -55,8 +57,11 @@ export async function validatePr(number) {
       await upsertComment(repo, number, `The files are valid, but I could not merge: ${String(e.message).slice(0, 200)}\n\nUsually this means the branch conflicts with \`main\` (for example the same file already exists). Update the branch and push again.\n\n— Cairn`);
       return 'merge-failed';
     }
-    await upsertComment(repo, number, `Accepted and recorded.\n\n${report(result.results)}\n\nThe site and leaderboard rebuild in a few minutes.\n\n— Cairn`);
+    // Optional PoA badge: a newly recorded poa_address gets its ownership challenge code here.
+    const poa = poaChallengeNote(conf, state, result.state, author, number);
+    await upsertComment(repo, number, `Accepted and recorded.\n\n${report(result.results)}\n\nThe site and leaderboard rebuild in a few minutes.${poa ? `\n\n${poa.text}` : ''}\n\n— Cairn`);
     await dispatchBuild(repo);
+    if (poa) await dispatchPoaCheck(repo, author, number).catch((e) => summary(`PoA check dispatch failed: ${e.message}`));
     return 'merged';
   }
 }

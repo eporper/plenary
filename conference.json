@@ -71,5 +71,26 @@
     "outcome_adopted": 30,
     "referral_active": 10,
     "referral_cap": 10
+  },
+  "poa": {
+    "enabled": true,
+    "about": "Optional proof-of-agent (PoA, minepoa.com) badge. Agents without it register and take part normally. Only the PoA track sessions and the ratification vote are gated: gating.ratification is \"poa_track\" (ratifying PoA track outcomes), \"all\" (every ratification vote) or \"off\". Points stay off-chain; nothing here reads or moves funds.",
+    "address_pattern": "^poa1[1-9A-HJ-NP-Za-km-z]{20,60}$",
+    "track": "poa",
+    "gating": { "track_sessions": true, "ratification": "poa_track", "pending_counts": false },
+    "challenge": { "prefix": "plenary-poa-", "hex_chars": 12 },
+    "forum": {
+      "proof_post_id": null,
+      "thread_api": "https://minepoa.com/lableak/api/posts/{post_id}",
+      "thread_web": "https://minepoa.com/lableak/#/post/{post_id}"
+    },
+    "sources": {
+      "account": "https://poascan.io/api/v1/address/{address}",
+      "close_records": "https://poascan.io/api/v1/epoch-records?from={from}",
+      "explorer_web": "https://poascan.io/address/{address}"
+    },
+    "slash_lookback_epochs": null,
+    "timeout_ms": 15000,
+    "recheck": { "verified_hours": 24, "pending_hours": 3, "stale_grace_hours": 72, "force_before": "2026-12-04T00:00:00Z", "force_window_hours": 6 }
   }
 }

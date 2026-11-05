@@ -29,6 +29,7 @@ export function recordFromIssue(kind, fields, author, nowIso) {
       const chain = pick(fields, 'wallet chain (optional)', 'wallet chain'); const addr = pick(fields, 'wallet address (optional)', 'wallet address');
       if (chain && addr && chain !== 'none') rec.wallet = { chain, address: addr };
       const ref = pick(fields, 'referral code (optional)', 'referral code'); if (ref) rec.referred_by = ref.trim().toLowerCase();
+      const poa = pick(fields, 'poa address (optional)', 'poa address'); if (poa) rec.poa_address = poa.trim();
       return rec;
     }
     case 'propose': {

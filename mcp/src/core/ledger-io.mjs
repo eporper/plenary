@@ -41,3 +41,9 @@ export function loadAgendaLock(root) {
   const p = join(root, 'ledger', 'agenda-lock.json');
   return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null;
 }
+
+/** Cached PoA badge checks (data/poa-status.json, written by scripts/poa-check.mjs), or null. */
+export function loadPoaStatus(root) {
+  const p = join(root, 'data', 'poa-status.json');
+  return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null;
+}

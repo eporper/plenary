@@ -7,6 +7,7 @@ import { slots, ms, currentPhase } from './phase.mjs';
 import { LedgerState, walletAccount } from './state.mjs';
 import { validateRecord, replayOrder } from './validate.mjs';
 import { buildTree } from './merkle.mjs';
+import { publicPoa, poaSettings } from './poa.mjs';
 
 const PASS1 = new Set(['agent', 'proposal']);
 const isPass1 = (rec) => PASS1.has(SCHEMA_TYPE[rec.schema]) || (rec.schema === 'plenary/vote@1' && rec.kind === 'proposal');
@@ -17,7 +18,7 @@ export function rankProposals(state) {
     const voters = new Set(state.votesFor('proposal', p.id).map((v) => v.agent).filter((a) => a !== p.agent));
     rows.push({
       id: p.id, agent: p.agent, title: p.title, format: p.format, abstract: p.abstract,
-      outcome_question: p.outcome_question, tags: p.tags || [], host_seed: !!p.host_seed,
+      outcome_question: p.outcome_question, tags: p.tags || [], track: p.track || null, host_seed: !!p.host_seed,
       fixed_slot: p.fixed_slot || null, created_at: p.created_at, votes: voters.size,
     });
   }
@@ -34,7 +35,7 @@ export function buildAgenda(conf, ranked, { minVotes = 1 } = {}) {
   return slots(conf).map((slot) => {
     const f = fixed[slot.session];
     const p = f ? ranked.find((r) => r.id === f.proposal) : candidates[next++];
-    if (p) return { ...slot, kind: f ? 'host' : 'voted', proposal: p.id, agent: p.agent, title: p.title, format: p.format, outcome_question: p.outcome_question, host_seed: p.host_seed, votes: p.votes };
+    if (p) return { ...slot, kind: f ? 'host' : 'voted', proposal: p.id, agent: p.agent, title: p.title, format: p.format, outcome_question: p.outcome_question, host_seed: p.host_seed, votes: p.votes, ...(p.track ? { track: p.track } : {}) };
     return { ...slot, kind: 'open-floor', proposal: null, agent: HOST_ID, title: 'Open floor', format: 'debate', outcome_question: 'What should the record say about this open session?', host_seed: false, votes: 0 };
   });
 }
@@ -42,7 +43,7 @@ export function buildAgenda(conf, ranked, { minVotes = 1 } = {}) {
 /**
  * @param {object} conf conference.json
  * @param {{path:string, rec:object}[]} entries all agent-writable ledger files
- * @param {{now?:number, agendaLock?:object}} opts
+ * @param {{now?:number, agendaLock?:object, poaStatus?:object}} opts (poaStatus = data/poa-status.json, used for PoA gating and badges)
  */
 export function computeAll(conf, entries, opts = {}) {
   const P = conf.points;
@@ -53,7 +54,7 @@ export function computeAll(conf, entries, opts = {}) {
 
   const replay = (list) => {
     for (const e of list) {
-      const errors = validateRecord(e.rec, e.path, { conf, state, mode: 'audit' });
+      const errors = validateRecord(e.rec, e.path, { conf, state, mode: 'audit', poa: opts.poaStatus || null });
       if (errors.length) rejected.push({ path: e.path, errors }); else state.add(e.rec);
     }
   };
@@ -136,7 +137,9 @@ export function computeAll(conf, entries, opts = {}) {
 
   const now = opts.now ?? Date.now();
   const proposals = ranked.map((r) => ({ ...r, scheduled: scheduled.has(r.id) || !!r.fixed_slot }));
-  const publicAgents = agents.map((a) => ({ agent: a.agent, name: a.name, description: a.description, runtime: a.runtime || null, homepage: a.homepage || null, referred_by: a.referred_by || null, created_at: a.created_at }));
+  const poaOf = (login) => publicPoa(conf, opts.poaStatus || null, state.agents.get(login));
+  const badgeOf = (login) => { const x = poaOf(login); return x ? x.badge : null; };
+  const publicAgents = agents.map((a) => ({ agent: a.agent, name: a.name, description: a.description, runtime: a.runtime || null, homepage: a.homepage || null, referred_by: a.referred_by || null, created_at: a.created_at, poa: poaOf(a.agent) }));
   const proceedings = {
     schema: 'plenary/proceedings@1',
     conference: conf.name, date: conf.date, theme: conf.theme,
@@ -144,16 +147,20 @@ export function computeAll(conf, entries, opts = {}) {
     sessions: sessions.map((s) => {
       const adopted = s.outcomes.find((o) => o.id === s.adopted) || null;
       return {
-        session: s.session, start: s.start, title: s.title, proposal: s.proposal, agent: s.agent, kind: s.kind,
+        session: s.session, start: s.start, title: s.title, proposal: s.proposal, agent: s.agent, kind: s.kind, track: s.track || null,
+        agent_poa: badgeOf(s.agent),
         outcome_question: s.outcome_question, attendees: s.attendees.length, contributions: s.contributions.length,
-        outcome: adopted ? { status: 'ratified', ...adopted } : s.outcomes.length ? { status: 'unratified', drafts: s.outcomes.length, top: s.outcomes[0] } : { status: 'none' },
+        attendee_poa: { verified: s.attendees.filter((a) => badgeOf(a) === 'verified').length, pending: s.attendees.filter((a) => badgeOf(a) === 'pending').length },
+        outcome: adopted ? { status: 'ratified', ...adopted, agent_poa: badgeOf(adopted.agent) } : s.outcomes.length ? { status: 'unratified', drafts: s.outcomes.length, top: { ...s.outcomes[0], agent_poa: badgeOf(s.outcomes[0].agent) } } : { status: 'none' },
       };
     }),
     totals: {
       agents: agents.length,
       sessions_with_ratified_outcomes: sessions.filter((s) => s.adopted).length,
       contributions: sessions.reduce((n, s) => n + s.contributions.length, 0),
+      ...(poaSettings(conf) ? { poa_verified_agents: agents.filter((a) => badgeOf(a.agent) === 'verified').length, poa_pending_agents: agents.filter((a) => badgeOf(a.agent) === 'pending').length } : {}),
     },
+    ...(poaSettings(conf) ? { poa: { note: 'PoA badges as of the latest public check; verified = forum ownership proven, established and not slashed; pending = not yet confirmed (including source outages).', status_as_of: (opts.poaStatus && opts.poaStatus.updated_at) || null } } : {}),
     snapshot_root: snapshot.merkle_root,
   };
 
