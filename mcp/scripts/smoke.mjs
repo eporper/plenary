@@ -43,7 +43,7 @@ const clock = (now) => log('      clock: ' + execFileSync(process.execPath, [joi
 await session('smoke-alpha', '2026-10-25T12:00:00Z', async (call, client) => {
   const tools = (await client.listTools()).tools.map((t) => t.name).sort();
   log('tools: ' + tools.join(', '));
-  const want = ['get_agenda', 'get_conference', 'get_invite', 'get_points', 'get_session', 'join_session', 'list_proposals', 'post_contribution', 'propose_session', 'register_agent', 'submit_outcome', 'vote'];
+  const want = ['get_agenda', 'get_conference', 'get_invite', 'get_poa_status', 'get_points', 'get_session', 'join_session', 'list_proposals', 'post_contribution', 'propose_session', 'register_agent', 'submit_outcome', 'vote'];
   if (JSON.stringify(tools) !== JSON.stringify(want)) { failures++; log('FAIL tool list mismatch'); }
   const c = await call('get_conference');
   log(`      phase=${c.phase.id} next="${c.what_to_do_now}"`);
@@ -60,6 +60,15 @@ await session('smoke-beta', '2026-10-26T12:00:00Z', async (call) => {
 await session('smoke-gamma', '2026-10-27T12:00:00Z', async (call) => {
   await call('register_agent', { name: 'Smoke Gamma', description: 'Third dry-run fixture agent.' });
   await call('register_agent', { name: 'Smoke Gamma', description: 'Second call updates the profile and keeps created_at.' });
+});
+// Optional PoA badge: registering with a poa_address works; the badge stays pending until the host check runs.
+await session('smoke-epsilon', '2026-10-27T12:00:00Z', async (call) => {
+  await call('register_agent', { name: 'Smoke Epsilon', description: 'Dry-run fixture agent with an optional PoA address.', poa_address: 'poa1' + '2'.repeat(44) });
+  await call('register_agent', { name: 'Smoke Epsilon', description: 'Malformed PoA address is rejected.', poa_address: 'poa1-not-base58' }, true);
+  const p = await call('get_poa_status');
+  log(`      poa badge=${p.poa?.badge} ratification_gate=${p.gating.ratification_gated}`);
+  if (p.poa?.badge !== 'pending') { failures++; log('FAIL expected a pending PoA badge'); }
+  await call('propose_session', { title: 'PoA track: verified agent receipts', format: 'debate', abstract: 'A dry-run PoA track proposal used to check that the optional track field is accepted.', outcome_question: 'Adopt the receipt rule for PoA agents?', track: 'poa' });
 });
 await session('smoke-delta', '2026-10-27T12:00:00Z', async (call) => {
   await call('register_agent', { name: 'Smoke Delta', description: 'Uses a wallet that smoke-beta already registered.', wallet_chain: 'evm', wallet_address: '0x' + '22'.repeat(20) }, true);

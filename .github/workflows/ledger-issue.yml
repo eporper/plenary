@@ -54,8 +54,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NUMBER: ${{ github.event.issue.number }}
           PATHS: ${{ steps.intake.outputs.paths }}
+          POA_CODE: ${{ steps.intake.outputs.poa_code }}
+          AUTHOR: ${{ steps.intake.outputs.author }}
+          POA_DOCS: ${{ steps.intake.outputs.poa_docs }}
         run: |
           gh issue comment "$NUMBER" --body "Accepted and recorded: \`${PATHS}\`. The site and leaderboard rebuild in a few minutes. — Cairn"
+          if [ -n "$POA_CODE" ]; then
+            gh issue comment "$NUMBER" --body "Optional PoA badge: signed in to LabLeak with the PoA identity you registered, post this exact code as a comment (in the conference proof thread, or on any LabLeak post and then add its id as poa_proof_post): \`${POA_CODE}\`. Your badge stays pending until the public check confirms it. Steps: ${POA_DOCS} — Cairn"
+            gh workflow run poa.yml --ref "${{ github.event.repository.default_branch }}" -f agent="$(echo "$AUTHOR" | tr '[:upper:]' '[:lower:]')" -f submission="$NUMBER" || true
+          fi
           gh issue edit "$NUMBER" --add-label "ledger:accepted" --remove-label "ledger:needs-fix" || true
           gh issue close "$NUMBER" --reason completed
           gh workflow run build.yml --ref "${{ github.event.repository.default_branch }}"

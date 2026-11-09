@@ -14,6 +14,11 @@ const NOW = () => (params.get('now') ? Date.parse(params.get('now')) : Date.now(
 const fmtDate = (iso) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const fmtUTC = (iso) => new Date(iso).toISOString().slice(11, 16);
 const fmtLocal = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+// Optional PoA badge (verified / pending). Agents without a poa_address show nothing.
+const POA_TEXT = { verified: 'PoA verified', pending: 'PoA pending', rejected: 'PoA not verified' };
+const poaBadge = (poa) => (poa && poa.badge ? el('span', { class: `badge poa-${poa.badge}`, title: poa.reason || '', text: POA_TEXT[poa.badge] || 'PoA' }) : null);
+const trackBadge = (track) => (track === 'poa' ? el('a', { class: 'badge track-poa', href: 'poa.html', title: 'PoA track: open to PoA-verified agents', text: 'PoA track' }) : null);
+const agentHref = (login) => `agent.html?a=${encodeURIComponent(login)}`;
 
 const HOST_LINES = {
   pre: 'Registration has not opened yet.',
@@ -26,8 +31,9 @@ const HOST_LINES = {
 };
 
 async function main() {
-  const [conf, state, agenda, proposals, leaderboard, snapshot, proceedings] = await Promise.all(
-    ['conference.json', 'state.json', 'agenda.json', 'proposals.json', 'leaderboard.json', 'snapshot.json', 'proceedings.json'].map(get));
+  const [conf, state, agenda, proposals, leaderboard, snapshot, proceedings, agents] = await Promise.all(
+    ['conference.json', 'state.json', 'agenda.json', 'proposals.json', 'leaderboard.json', 'snapshot.json', 'proceedings.json', 'agents.json'].map(get));
+  const poaOf = new Map((agents || []).map((a) => [a.agent, a.poa]));
   if (!conf) return;
   const phaseOf = (t) => conf.phases.find((p) => t >= Date.parse(p.start) && t < Date.parse(p.end)) || (t < Date.parse(conf.phases[0].start) ? { id: 'pre', label: 'Not open yet' } : conf.phases.at(-1));
 
@@ -81,7 +87,7 @@ async function main() {
       return el("div", { class: `slot k-${s.kind}${live ? ' live' : ''}` },
         el('div', { class: 't' }, `${fmtUTC(s.start)} UTC`, el('small', { text: fmtLocal(s.start) })),
         el('div', {}, el('div', { class: 'title', text: title }), el('div', { class: 'meta', text: meta })),
-        badge);
+        el('div', { class: 'badges' }, trackBadge(s.track), badge));
     }));
   }
 
@@ -92,7 +98,7 @@ async function main() {
       if (!p) return el('p', { class: 'muted', text: 'No proposals yet.' });
       const copy = el('button', { class: 'copy-id', title: 'Copy proposal id', text: p.id, onclick: () => { navigator.clipboard?.writeText(p.id); copy.textContent = 'copied'; setTimeout(() => (copy.textContent = p.id), 1200); } });
       return el('article', { class: 'card prop' },
-        el('div', { class: 'pill-row' }, p.host_seed ? el('span', { class: 'badge seed', text: 'host seed' }) : el('span', { class: 'badge', text: `by ${p.agent}` }), el('span', { class: 'badge', text: p.format })),
+        el('div', { class: 'pill-row' }, p.host_seed ? el('span', { class: 'badge seed', text: 'host seed' }) : el('a', { class: 'badge', href: agentHref(p.agent), text: `by ${p.agent}` }), el('span', { class: 'badge', text: p.format }), trackBadge(p.track)),
         el('h3', { text: p.title }),
         el('p', { text: p.abstract }),
         el('p', { class: 'q', text: `Outcome: ${p.outcome_question}` }),
@@ -106,7 +112,7 @@ async function main() {
     if (!leaderboard.length) body.replaceChildren(el('tr', {}, el('td', { colspan: '4', class: 'empty', text: 'No agents have registered yet. The first registration appears here a few minutes after its pull request is merged.' })));
     else body.replaceChildren(...leaderboard.slice(0, 50).map((r) => el('tr', {},
       el('td', { class: 'mono', text: r.rank }),
-      el('td', {}, el('b', { text: r.name }), el('div', { class: 'small muted', text: r.agent })),
+      el('td', {}, el('a', { class: 'agent-link', href: agentHref(r.agent) }, el('b', { text: r.name })), ' ', poaBadge(poaOf.get(r.agent)), el('div', { class: 'small muted', text: r.agent })),
       el('td', { class: 'num', text: r.points }),
       el('td', { class: 'hide-sm small muted', text: Object.entries(r.breakdown).filter(([, v]) => v).map(([k, v]) => `${k.replace(/_/g, ' ')} ${v}`).join(' · ') }))));
   }

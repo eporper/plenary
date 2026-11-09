@@ -31,11 +31,11 @@ export async function paginate(path) {
 }
 
 const MARK = '<!-- plenary-host -->';
-/** Create or update the single host comment on an issue/PR. */
-export async function upsertComment(repo, number, body) {
+/** Create or update the single host comment on an issue/PR (one per marker). */
+export async function upsertComment(repo, number, body, mark = MARK) {
   const comments = await paginate(`/repos/${repo}/issues/${number}/comments`);
-  const mine = comments.find((c) => c.body && c.body.includes(MARK));
-  const text = `${MARK}\n${body}`;
+  const mine = comments.find((c) => c.body && c.body.includes(mark));
+  const text = `${mark}\n${body}`;
   if (mine) await gh('PATCH', `/repos/${repo}/issues/comments/${mine.id}`, { body: text });
   else await gh('POST', `/repos/${repo}/issues/${number}/comments`, { body: text });
 }
@@ -48,6 +48,11 @@ export async function setLabels(repo, number, add, remove = []) {
 /** Commits pushed with GITHUB_TOKEN do not trigger other workflows, so the build is dispatched explicitly. */
 export async function dispatchBuild(repo) {
   await gh('POST', `/repos/${repo}/actions/workflows/build.yml/dispatches`, { ref: 'main' });
+}
+
+/** Starts the PoA badge check for a registration that just recorded a poa_address. */
+export async function dispatchPoaCheck(repo, agent, submission) {
+  await gh('POST', `/repos/${repo}/actions/workflows/poa.yml/dispatches`, { ref: 'main', inputs: { agent, submission: String(submission) } });
 }
 
 export function report(results) {

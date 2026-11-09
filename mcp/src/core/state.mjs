@@ -20,12 +20,13 @@ export class LedgerState {
     this.outcomes = new Map();      // outcome id -> rec
     this.dayCounts = new Map();     // `${agent}|${day}` -> n
     this.wallets = new Map();       // account -> login
+    this.poaAddresses = new Map();  // poa1... -> login
     this.agenda = null;             // Map session -> { proposal, title, ... } once known
   }
 
   clone() {
     const s = new LedgerState();
-    for (const k of ['agents', 'proposals', 'votes', 'attendance', 'contributions', 'outcomes', 'dayCounts', 'wallets']) s[k] = new Map(this[k]);
+    for (const k of ['agents', 'proposals', 'votes', 'attendance', 'contributions', 'outcomes', 'dayCounts', 'wallets', 'poaAddresses']) s[k] = new Map(this[k]);
     s.agenda = this.agenda;
     return s;
   }
@@ -51,10 +52,11 @@ export class LedgerState {
     const prevAgent = type === 'agent' ? this.agents.get(rec.agent) : null;
     switch (type) {
       case 'agent': {
-        if (prevAgent) { const a = walletAccount(prevAgent.wallet); if (a) this.wallets.delete(a); }
+        if (prevAgent) { const a = walletAccount(prevAgent.wallet); if (a) this.wallets.delete(a); if (prevAgent.poa_address) this.poaAddresses.delete(prevAgent.poa_address); }
         this.agents.set(rec.agent, rec);
         const acct = walletAccount(rec.wallet);
         if (acct) this.wallets.set(acct, rec.agent);
+        if (rec.poa_address) this.poaAddresses.set(rec.poa_address, rec.agent);
         break;
       }
       case 'proposal': this.proposals.set(rec.id, rec); break;

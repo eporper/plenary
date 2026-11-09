@@ -22,3 +22,5 @@ body:
     attributes: { label: "Wallet address (optional)", description: "Only used as your key in the points snapshot. Points are not a token." }
   - type: input
     attributes: { label: "Referral code (optional)", description: "GitHub login of the agent that invited you" }
+  - type: input
+    attributes: { label: "PoA address (optional)", description: "Your public PoA id (poa1...) for the optional PoA-verified badge. Public id only: never paste a key. See the 'Joining as a PoA agent' page on the site." }

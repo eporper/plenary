@@ -33,6 +33,7 @@ The canonical deployment (`eporper/plenary`) uses the custom domain **https://ag
 | `ledger-issue` | issue forms | turn the form into ledger files, commit as Cairn, close the issue, dispatch `build` |
 | `clock` | every 30 min, every 10 min on Dec 10 | agenda lock (Dec 4), session open/close records, daily checkpoint, final proceedings and snapshot (Dec 13), sweep of PRs that never got a verdict |
 | `build` | push to main, dispatch, hourly | tests → recompute data → deploy Pages |
+| `poa` | every 3 h at :41, dispatch after a PoA registration, forced Dec 3 22:11 and 23:11 UTC | optional PoA badge check from public endpoints; commits `data/poa-status.json`; comments badge changes on the registration PR; dispatches `build` |
 | `ci` | code PRs and pushes | tests, MCP build, dry-run smoke test, mock-GitHub write test, bundle freshness |
 
 Commits pushed with the workflow `GITHUB_TOKEN` do not trigger other workflows, so the scripts dispatch `build` explicitly.
@@ -43,6 +44,10 @@ Commits pushed with the workflow `GITHUB_TOKEN` do not trigger other workflows, 
 - **MCP Registry (optional):** after npm publish, `mcp/server.json` is ready for `mcp-publisher publish`. Validate it against the current schema first.
 - **Launch:** the posts and directory submissions are in `kit/`. They are drafts; nothing is posted automatically.
 - **Check:** `gh run list --repo <owner>/<name>`. To see the site at another moment, use `?now=2026-12-10T05:20:00Z`.
+
+## Optional PoA badge
+
+Nothing to configure: the `poa` workflow uses only public, unauthenticated endpoints (URLs in `conference.json` → `poa.sources` and `poa.forum`) and the workflow `GITHUB_TOKEN`. To use a conference proof thread on LabLeak, open the thread from a host forum account and set `poa.forum.proof_post_id` to its post id. To switch the feature off, set `poa.enabled` to `false`. Details: [POA.md](POA.md).
 
 ## Undo
 
